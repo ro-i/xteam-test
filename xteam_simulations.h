@@ -1,0 +1,803 @@
+#pragma once
+
+#include <cassert>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
+#include <omp.h>
+
+#include "common.h"
+
+// Reduction simulation device state
+uint32_t *d_td = nullptr;
+template <typename T> T *d_team_vals = nullptr;
+
+// Scan simulation device state
+uint32_t *d_status = nullptr;
+template <typename T> T *d_aggregates = nullptr;
+template <typename T> T *d_prefixes = nullptr;
+template <typename T> T *d_scan_out = nullptr;
+
+// =========================================================================
+// OpenMP device runtime definitions
+// =========================================================================
+
+#define _UI unsigned int
+#define _UL unsigned long
+#define _INLINE_ATTR_ __attribute__((flatten, always_inline))
+#define _RF_LDS volatile __attribute__((address_space(3)))
+
+#if defined(__AMDGCN__) || defined(__NVPTX__)
+#define _XTEAMR_SCOPE __MEMORY_SCOPE_SYSTEM
+#else
+#define _XTEAMR_SCOPE 0
+#endif
+
+#if defined(__AMDGCN__) || defined(__NVPTX__)
+
+// Device compilation: declarations resolved from device runtime bitcode.
+extern "C" {
+// Reduction functions
+void _INLINE_ATTR_ __kmpc_xteamr_d(double v, double *r_ptr, double *tvs,
+                                   uint32_t *td, void (*_rf)(double *, double),
+                                   void (*_rf_lds)(_RF_LDS double *,
+                                                   _RF_LDS double *),
+                                   const double rnv, const uint64_t k,
+                                   const uint32_t numteams, int Scope);
+void _INLINE_ATTR_ __kmpc_xteamr_f(float v, float *r_ptr, float *tvs,
+                                   uint32_t *td, void (*_rf)(float *, float),
+                                   void (*_rf_lds)(_RF_LDS float *,
+                                                   _RF_LDS float *),
+                                   const float rnv, const uint64_t k,
+                                   const uint32_t numteams, int Scope);
+void _INLINE_ATTR_ __kmpc_xteamr_i(
+    int v, int *r_ptr, int *tvs, uint32_t *td, void (*_rf)(int *, int),
+    void (*_rf_lds)(_RF_LDS int *, _RF_LDS int *), const int rnv,
+    const uint64_t k, const uint32_t numteams, int Scope);
+void _INLINE_ATTR_ __kmpc_xteamr_ui(
+    _UI v, _UI *r_ptr, _UI *tvs, uint32_t *td, void (*_rf)(_UI *, _UI),
+    void (*_rf_lds)(_RF_LDS _UI *, _RF_LDS _UI *), const _UI rnv,
+    const uint64_t k, const uint32_t numteams, int Scope);
+void _INLINE_ATTR_ __kmpc_xteamr_l(
+    long v, long *r_ptr, long *tvs, uint32_t *td, void (*_rf)(long *, long),
+    void (*_rf_lds)(_RF_LDS long *, _RF_LDS long *), const long rnv,
+    const uint64_t k, const uint32_t numteams, int Scope);
+void _INLINE_ATTR_ __kmpc_xteamr_ul(
+    _UL v, _UL *r_ptr, _UL *tvs, uint32_t *td, void (*_rf)(_UL *, _UL),
+    void (*_rf_lds)(_RF_LDS _UL *, _RF_LDS _UL *), const _UL rnv,
+    const uint64_t k, const uint32_t numteams, int Scope);
+
+// Scan functions
+void _INLINE_ATTR_ __kmpc_xteams_d(double v, double *result, uint32_t *status,
+                                   double *aggregates, double *prefixes,
+                                   void (*rf)(double *, double),
+                                   const double rnv, const uint64_t k,
+                                   const uint64_t n, bool is_inclusive);
+void _INLINE_ATTR_ __kmpc_xteams_f(float v, float *result, uint32_t *status,
+                                   float *aggregates, float *prefixes,
+                                   void (*rf)(float *, float), const float rnv,
+                                   const uint64_t k, const uint64_t n,
+                                   bool is_inclusive);
+void _INLINE_ATTR_ __kmpc_xteams_i(int v, int *result, uint32_t *status,
+                                   int *aggregates, int *prefixes,
+                                   void (*rf)(int *, int), const int rnv,
+                                   const uint64_t k, const uint64_t n,
+                                   bool is_inclusive);
+void _INLINE_ATTR_ __kmpc_xteams_ui(_UI v, _UI *result, uint32_t *status,
+                                    _UI *aggregates, _UI *prefixes,
+                                    void (*rf)(_UI *, _UI), const _UI rnv,
+                                    const uint64_t k, const uint64_t n,
+                                    bool is_inclusive);
+void _INLINE_ATTR_ __kmpc_xteams_l(long v, long *result, uint32_t *status,
+                                   long *aggregates, long *prefixes,
+                                   void (*rf)(long *, long), const long rnv,
+                                   const uint64_t k, const uint64_t n,
+                                   bool is_inclusive);
+void _INLINE_ATTR_ __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status,
+                                    _UL *aggregates, _UL *prefixes,
+                                    void (*rf)(_UL *, _UL), const _UL rnv,
+                                    const uint64_t k, const uint64_t n,
+                                    bool is_inclusive);
+
+void __kmpc_rfun_sum_d(double *val, double otherval);
+void __kmpc_rfun_sum_f(float *val, float otherval);
+void __kmpc_rfun_sum_i(int *val, int otherval);
+void __kmpc_rfun_sum_ui(_UI *val, _UI otherval);
+void __kmpc_rfun_sum_l(long *val, long otherval);
+void __kmpc_rfun_sum_ul(_UL *val, _UL otherval);
+void __kmpc_rfun_sum_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
+void __kmpc_rfun_sum_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
+void __kmpc_rfun_sum_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
+void __kmpc_rfun_sum_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
+void __kmpc_rfun_sum_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
+void __kmpc_rfun_sum_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
+void __kmpc_rfun_max_d(double *val, double otherval);
+void __kmpc_rfun_max_f(float *val, float otherval);
+void __kmpc_rfun_max_i(int *val, int otherval);
+void __kmpc_rfun_max_ui(_UI *val, _UI otherval);
+void __kmpc_rfun_max_l(long *val, long otherval);
+void __kmpc_rfun_max_ul(_UL *val, _UL otherval);
+void __kmpc_rfun_max_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
+void __kmpc_rfun_max_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
+void __kmpc_rfun_max_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
+void __kmpc_rfun_max_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
+void __kmpc_rfun_max_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
+void __kmpc_rfun_max_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
+void __kmpc_rfun_min_d(double *val, double otherval);
+void __kmpc_rfun_min_f(float *val, float otherval);
+void __kmpc_rfun_min_i(int *val, int otherval);
+void __kmpc_rfun_min_ui(_UI *val, _UI otherval);
+void __kmpc_rfun_min_l(long *val, long otherval);
+void __kmpc_rfun_min_ul(_UL *val, _UL otherval);
+void __kmpc_rfun_min_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
+void __kmpc_rfun_min_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
+void __kmpc_rfun_min_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
+void __kmpc_rfun_min_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
+void __kmpc_rfun_min_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
+void __kmpc_rfun_min_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
+}
+
+#else
+
+// Host compilation: empty stubs so the host linker is satisfied.
+extern "C" {
+// Reduction functions
+void __kmpc_xteamr_d(double, double *, double *, uint32_t *,
+                     void (*)(double *, double),
+                     void (*)(_RF_LDS double *, _RF_LDS double *), const double,
+                     const uint64_t, const uint32_t, int) {}
+void __kmpc_xteamr_f(float, float *, float *, uint32_t *,
+                     void (*)(float *, float),
+                     void (*)(_RF_LDS float *, _RF_LDS float *), const float,
+                     const uint64_t, const uint32_t, int) {}
+void __kmpc_xteamr_i(int, int *, int *, uint32_t *, void (*)(int *, int),
+                     void (*)(_RF_LDS int *, _RF_LDS int *), const int,
+                     const uint64_t, const uint32_t, int) {}
+void __kmpc_xteamr_ui(_UI, _UI *, _UI *, uint32_t *, void (*)(_UI *, _UI),
+                      void (*)(_RF_LDS _UI *, _RF_LDS _UI *), const _UI,
+                      const uint64_t, const uint32_t, int) {}
+void __kmpc_xteamr_l(long, long *, long *, uint32_t *, void (*)(long *, long),
+                     void (*)(_RF_LDS long *, _RF_LDS long *), const long,
+                     const uint64_t, const uint32_t, int) {}
+void __kmpc_xteamr_ul(_UL, _UL *, _UL *, uint32_t *, void (*)(_UL *, _UL),
+                      void (*)(_RF_LDS _UL *, _RF_LDS _UL *), const _UL,
+                      const uint64_t, const uint32_t, int) {}
+
+// Scan functions
+void __kmpc_xteams_d(double v, double *result, uint32_t *status,
+                     double *aggregates, double *prefixes,
+                     void (*rf)(double *, double), const double rnv,
+                     const uint64_t k, const uint64_t n, bool is_inclusive) {}
+void __kmpc_xteams_f(float v, float *result, uint32_t *status,
+                     float *aggregates, float *prefixes,
+                     void (*rf)(float *, float), const float rnv,
+                     const uint64_t k, const uint64_t n, bool is_inclusive) {}
+void __kmpc_xteams_i(int v, int *result, uint32_t *status, int *aggregates,
+                     int *prefixes, void (*rf)(int *, int), const int rnv,
+                     const uint64_t k, const uint64_t n, bool is_inclusive) {}
+void __kmpc_xteams_ui(_UI v, _UI *result, uint32_t *status, _UI *aggregates,
+                      _UI *prefixes, void (*rf)(_UI *, _UI), const _UI rnv,
+                      const uint64_t k, const uint64_t n, bool is_inclusive) {}
+void __kmpc_xteams_l(long v, long *result, uint32_t *status, long *aggregates,
+                     long *prefixes, void (*rf)(long *, long), const long rnv,
+                     const uint64_t k, const uint64_t n, bool is_inclusive) {}
+void __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status, _UL *aggregates,
+                      _UL *prefixes, void (*rf)(_UL *, _UL), const _UL rnv,
+                      const uint64_t k, const uint64_t n, bool is_inclusive) {}
+
+void __kmpc_rfun_sum_d(double *val, double otherval) {}
+void __kmpc_rfun_sum_f(float *val, float otherval) {}
+void __kmpc_rfun_sum_i(int *val, int otherval) {}
+void __kmpc_rfun_sum_ui(_UI *val, _UI otherval) {}
+void __kmpc_rfun_sum_l(long *val, long otherval) {}
+void __kmpc_rfun_sum_ul(_UL *val, _UL otherval) {}
+void __kmpc_rfun_sum_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
+void __kmpc_rfun_sum_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
+void __kmpc_rfun_sum_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
+void __kmpc_rfun_sum_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
+void __kmpc_rfun_sum_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
+void __kmpc_rfun_sum_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
+void __kmpc_rfun_max_d(double *val, double otherval) {}
+void __kmpc_rfun_max_f(float *val, float otherval) {}
+void __kmpc_rfun_max_i(int *val, int otherval) {}
+void __kmpc_rfun_max_ui(_UI *val, _UI otherval) {}
+void __kmpc_rfun_max_l(long *val, long otherval) {}
+void __kmpc_rfun_max_ul(_UL *val, _UL otherval) {}
+void __kmpc_rfun_max_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
+void __kmpc_rfun_max_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
+void __kmpc_rfun_max_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
+void __kmpc_rfun_max_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
+void __kmpc_rfun_max_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
+void __kmpc_rfun_max_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
+void __kmpc_rfun_min_d(double *val, double otherval) {}
+void __kmpc_rfun_min_f(float *val, float otherval) {}
+void __kmpc_rfun_min_i(int *val, int otherval) {}
+void __kmpc_rfun_min_ui(_UI *val, _UI otherval) {}
+void __kmpc_rfun_min_l(long *val, long otherval) {}
+void __kmpc_rfun_min_ul(_UL *val, _UL otherval) {}
+void __kmpc_rfun_min_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
+void __kmpc_rfun_min_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
+void __kmpc_rfun_min_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
+void __kmpc_rfun_min_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
+void __kmpc_rfun_min_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
+void __kmpc_rfun_min_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
+}
+
+#endif
+
+// =========================================================================
+// Helper functions
+// =========================================================================
+
+template <typename T>
+using xteamr_fn_t = void (*)(T, T *, T *, uint32_t *, void (*)(T *, T),
+                              void (*)(_RF_LDS T *, _RF_LDS T *), const T,
+                              const uint64_t, const uint32_t, int);
+
+template <typename T> xteamr_fn_t<T> get_kmpc_xteamr_func() {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_xteamr_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_xteamr_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_xteamr_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_xteamr_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_xteamr_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_xteamr_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T>
+void (*get_kmpc_xteams_func())(T, T *, uint32_t *, T *, T *, void (*)(T *, T),
+                               const T, const uint64_t, const uint64_t, bool) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_xteams_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_xteams_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_xteams_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_xteams_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_xteams_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_xteams_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T> void (*get_rfun_sum_func())(T *, T) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_rfun_sum_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_rfun_sum_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_rfun_sum_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_rfun_sum_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_rfun_sum_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_rfun_sum_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T> void (*get_rfun_max_func())(T *, T) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_rfun_max_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_rfun_max_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_rfun_max_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_rfun_max_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_rfun_max_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_rfun_max_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T> void (*get_rfun_min_func())(T *, T) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_rfun_min_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_rfun_min_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_rfun_min_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_rfun_min_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_rfun_min_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_rfun_min_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T>
+void (*get_rfun_sum_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_rfun_sum_lds_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_rfun_sum_lds_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_rfun_sum_lds_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_rfun_sum_lds_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_rfun_sum_lds_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_rfun_sum_lds_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T>
+void (*get_rfun_max_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_rfun_max_lds_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_rfun_max_lds_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_rfun_max_lds_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_rfun_max_lds_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_rfun_max_lds_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_rfun_max_lds_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+template <typename T>
+void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+  if constexpr (std::is_same_v<T, double>) {
+    return __kmpc_rfun_min_lds_d;
+  } else if constexpr (std::is_same_v<T, float>) {
+    return __kmpc_rfun_min_lds_f;
+  } else if constexpr (std::is_same_v<T, int>) {
+    return __kmpc_rfun_min_lds_i;
+  } else if constexpr (std::is_same_v<T, unsigned int>) {
+    return __kmpc_rfun_min_lds_ui;
+  } else if constexpr (std::is_same_v<T, long>) {
+    return __kmpc_rfun_min_lds_l;
+  } else if constexpr (std::is_same_v<T, unsigned long>) {
+    return __kmpc_rfun_min_lds_ul;
+  } else {
+    static_assert(false, "Unsupported type");
+  }
+}
+
+// =========================================================================
+// GPU cross-team reduction kernels
+// These are simulations for compilers without corresponding codegen support
+// =========================================================================
+
+template <typename T> T reduce_sum_sim(const T *__restrict in, uint64_t n) {
+  T s = T(0);
+  const T rnv = T(0);
+
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
+    is_device_ptr(d_team_vals<T>, d_td)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val = rnv;
+    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
+      val += in[i];
+    get_kmpc_xteamr_func<T>()(val, &s, d_team_vals<T>, d_td,
+                              get_rfun_sum_func<T>(),
+                              get_rfun_sum_lds_func<T>(),
+                              rnv, k, XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+  }
+
+  return s;
+}
+
+template <typename T> T reduce_max_sim(const T *__restrict in, uint64_t n) {
+  T s = T(0);
+  const T rnv = std::numeric_limits<T>::lowest();
+
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
+    is_device_ptr(d_team_vals<T>, d_td)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val = rnv;
+    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
+      val = std::max(val, in[i]);
+    get_kmpc_xteamr_func<T>()(val, &s, d_team_vals<T>, d_td,
+                              get_rfun_max_func<T>(),
+                              get_rfun_max_lds_func<T>(),
+                              rnv, k, XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+  }
+
+  return s;
+}
+
+template <typename T> T reduce_min_sim(const T *__restrict in, uint64_t n) {
+  T s = T(0);
+  const T rnv = std::numeric_limits<T>::max();
+
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
+    is_device_ptr(d_team_vals<T>, d_td)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val = rnv;
+    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
+      val = std::min(val, in[i]);
+    get_kmpc_xteamr_func<T>()(val, &s, d_team_vals<T>, d_td,
+                              get_rfun_min_func<T>(),
+                              get_rfun_min_lds_func<T>(),
+                              rnv, k, XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+  }
+
+  return s;
+}
+
+template <typename T>
+T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
+  T s = T(0);
+  const T rnv = T(0);
+
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
+    is_device_ptr(d_team_vals<T>, d_td)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val = rnv;
+    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
+      val += a[i] * b[i];
+    get_kmpc_xteamr_func<T>()(val, &s, d_team_vals<T>, d_td,
+                              get_rfun_sum_func<T>(),
+                              get_rfun_sum_lds_func<T>(),
+                              rnv, k, XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+  }
+
+  return s;
+}
+
+// =========================================================================
+// GPU cross-team scan kernels
+// These are simulations for compilers without corresponding codegen support
+// =========================================================================
+
+template <typename T>
+void scan_incl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = T(0);
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = rnv;
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 += in[k * stride + i];
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_sum_func<T>(), rnv, k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      running += in[k * stride + i];
+      out[k * stride + i] = running;
+    }
+  }
+}
+
+template <typename T>
+void scan_excl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = T(0);
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = rnv;
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 += in[k * stride + i];
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_sum_func<T>(), rnv, k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      out[k * stride + i] = running;
+      running += in[k * stride + i];
+    }
+  }
+}
+
+template <typename T>
+void scan_incl_max_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = std::numeric_limits<T>::lowest();
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = rnv;
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 = std::max(val0, in[k * stride + i]);
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_max_func<T>(), rnv, k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      running = std::max(running, in[k * stride + i]);
+      out[k * stride + i] = running;
+    }
+  }
+}
+
+template <typename T>
+void scan_excl_max_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = std::numeric_limits<T>::lowest();
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = rnv;
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 = std::max(val0, in[k * stride + i]);
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_max_func<T>(), rnv, k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      out[k * stride + i] = running;
+      running = std::max(running, in[k * stride + i]);
+    }
+  }
+}
+
+template <typename T>
+void scan_incl_min_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = std::numeric_limits<T>::max();
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = rnv;
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 = std::min(val0, in[k * stride + i]);
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_min_func<T>(), rnv, k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      running = std::min(running, in[k * stride + i]);
+      out[k * stride + i] = running;
+    }
+  }
+}
+
+template <typename T>
+void scan_excl_min_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = std::numeric_limits<T>::max();
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = rnv;
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 = std::min(val0, in[k * stride + i]);
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_min_func<T>(), rnv, k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      out[k * stride + i] = running;
+      running = std::min(running, in[k * stride + i]);
+    }
+  }
+}
+
+template <typename T>
+void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
+                       T *__restrict out, uint64_t n) {
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = T(0);
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 += a[k * stride + i] * b[k * stride + i];
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      running += a[k * stride + i] * b[k * stride + i];
+      out[k * stride + i] = running;
+    }
+  }
+}
+
+template <typename T>
+void scan_excl_dot_sim(const T *__restrict a, const T *__restrict b,
+                       T *__restrict out, uint64_t n) {
+  const uint64_t stride = n / XTEAM_TOTAL_NUM_THREADS;
+
+// K1: aggregate + scan
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS)                                             \
+    is_device_ptr(d_status, d_aggregates<T>, d_prefixes<T>, d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T val0 = T(0);
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      val0 += a[k * stride + i] * b[k * stride + i];
+    }
+    get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
+                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k,
+                              (uint64_t)XTEAM_TOTAL_NUM_THREADS, false);
+  }
+
+// K2: redistribution
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_scan_out<T>)
+  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+    T running = d_scan_out<T>[k];
+    for (uint64_t i = 0; i < stride || ((k == XTEAM_TOTAL_NUM_THREADS - 1) &&
+                                        (k * stride + i < n));
+         i++) {
+      out[k * stride + i] = running;
+      running += a[k * stride + i] * b[k * stride + i];
+    }
+  }
+}
+
+// =========================================================================
+// Initialization and cleanup of the simulation helper data
+// =========================================================================
+
+template <typename T> void init_device_sim() {
+  assert(d_status == nullptr && d_td == nullptr);
+  int devid = 0;
+
+  // Reduction state
+  d_td = static_cast<uint32_t *>(omp_target_alloc(sizeof(uint32_t), devid));
+  d_team_vals<T> =
+      static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
+  omp_target_memset(d_td, 0, sizeof(uint32_t), devid);
+
+  // Scan state
+  d_status = static_cast<uint32_t *>(
+      omp_target_alloc(sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1), devid));
+  d_aggregates<T> =
+      static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
+  d_prefixes<T> =
+      static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
+  d_scan_out<T> = static_cast<T *>(
+      omp_target_alloc(sizeof(T) * XTEAM_TOTAL_NUM_THREADS, devid));
+  omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
+                    devid);
+}
+
+template <typename T> void free_device_sim() {
+  assert(d_status != nullptr && d_td != nullptr);
+  int devid = 0;
+
+  // Reduction state
+  omp_target_free(d_td, devid);
+  d_td = nullptr;
+  omp_target_free(d_team_vals<T>, devid);
+  d_team_vals<T> = nullptr;
+
+  // Scan state
+  omp_target_free(d_status, devid);
+  d_status = nullptr;
+  omp_target_free(d_aggregates<T>, devid);
+  d_aggregates<T> = nullptr;
+  omp_target_free(d_prefixes<T>, devid);
+  d_prefixes<T> = nullptr;
+  omp_target_free(d_scan_out<T>, devid);
+  d_scan_out<T> = nullptr;
+}
