@@ -9,25 +9,32 @@
 #define WARMUP_ITERS 2
 #endif
 #ifndef BENCH_ITERS
-#define BENCH_ITERS 10
+#define BENCH_ITERS 1000
 #endif
 #ifndef QUICK_RUN
 #define QUICK_RUN 0
 #endif
-#ifndef SCAN_SUPPORT
-#define SCAN_SUPPORT 1
+#ifndef SCAN_TEST
+#define SCAN_TEST 1
 #endif
 #ifndef SCAN_SIMULATION
 #define SCAN_SIMULATION 1
 #endif
+#ifndef REDUCTION_TEST
+#define REDUCTION_TEST 0
+#endif
 #ifndef REDUCTION_SIMULATION
-#define REDUCTION_SIMULATION 1
+#define REDUCTION_SIMULATION 0
 #endif
 #ifndef XTEAM_NUM_THREADS
 #define XTEAM_NUM_THREADS 512
 #endif
 #ifndef XTEAM_NUM_TEAMS
-#define XTEAM_NUM_TEAMS 64
+#define XTEAM_NUM_TEAMS 416 // 104
+#endif
+// If true, let codegen for reduction/scan determine num_teams and num_threads.
+#ifndef CODEGEN_AUTODETECTION
+#define CODEGEN_AUTODETECTION 1
 #endif
 
 // default alignment for aligned_alloc

@@ -88,14 +88,15 @@ fi
 
 # ── Summarise results ───────────────────────────────────────────────────────
 echo "═════════════════════════════════════════════════════════════════════"
-echo "Summary: best MB/s across all rounds (higher is better)"
+echo "Summary: best MB/s and avg MB/s across all rounds (higher is better)"
 echo "═════════════════════════════════════════════════════════════════════"
 echo
 
 # Header
 printf "%-24s %-8s %10s" "test" "type" "N"
 for label in "${LABELS[@]}"; do
-  printf "  %12s" "$label"
+  printf "  %15s" "$label (best)"
+  printf "  %15s" "$label (avg)"
 done
 echo
 
@@ -111,14 +112,32 @@ grep -oE '^\s*(red|excl|incl)_\S+\s+\S+\s+[0-9]+' "$first_file" | while read -r 
   printf "%-24s %-8s %10s" "$test_name" "$type_name" "$n_val"
 
   for label in "${LABELS[@]}"; do
+    unset best_mbps avg_mbps
+
     mapfile -t file_list < <(printf "${RESULTS_DIR}/${label}_round%d.txt\n" $(seq 1 $ROUNDS))
-    mapfile -t mbps_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}")
-    if [[ ! " {mpbs_list[@]} " =~ " FAIL " ]]; then
-      best_mbps=$(printf "%s\n" "${mbps_list[@]}" | sort -rn | head -1)
-    else
-      best_mbps="FAIL"
+    mapfile -t best_mbps_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}")
+    mapfile -t avg_mbps_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}")
+
+    if [[ ${#best_mbps_list[@]} -gt 0 ]]; then
+      if [[ ! " ${best_mbps_list[@]} " =~ " FAIL " ]]; then
+        best_mbps=$(printf "%s\n" "${best_mbps_list[@]}" | sort -rn | head -1)
+      else
+        best_mbps="FAIL"
+      fi
     fi
-    printf "  %12s" "${best_mbps:-N/A}"
+    if [[ ${#avg_mbps_list[@]} -gt 0 ]]; then
+      if [[ ! " ${avg_mbps_list[@]} " =~ " FAIL " ]]; then
+        avg_mbps=0
+        for mbps in "${avg_mbps_list[@]}"; do
+          avg_mbps=$(echo "$avg_mbps + $mbps" | bc -l)
+        done
+        avg_mbps=$(echo "scale=0; $avg_mbps / ${#avg_mbps_list[@]}" | bc -l)
+      else
+        avg_mbps="FAIL"
+      fi
+    fi
+
+    printf "  %15s  %15s" "${best_mbps:-N/A}" "${avg_mbps:-N/A}"
   done
   echo
 done

@@ -16,10 +16,15 @@
 OFFLOAD_ARCH ?= gfx90a
 
 # ── Common flags ────────────────────────────────────────────────────────────
-COMMON_FLAGS = -O0 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -fopenmp-target-xteam-scan -std=c++20
-BENCH_ITERS  ?= 10
+COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -fopenmp-target-xteam-scan -std=c++20 -save-temps
+BENCH_ITERS  ?= 1000
 WARMUP_ITERS ?= 2
 QUICK_RUN    ?= 0
+ifeq ($(QUICK_RUN),1)
+  ROUNDS     ?= 1
+else
+  ROUNDS     ?= 5
+endif
 DEFS         = -DBENCH_ITERS=$(BENCH_ITERS) -DWARMUP_ITERS=$(WARMUP_ITERS) -DQUICK_RUN=$(QUICK_RUN)
 
 SRC = xteam_bench.cpp
@@ -79,15 +84,15 @@ $(foreach L,$(LABELS),$(eval $(call COMPILER_RULE,$(L))))
 
 run:
 	rm -f $(BINARIES)
-	$(MAKE) QUICK_RUN=0 $(BINARIES)
+	$(MAKE) QUICK_RUN=0 ROUNDS=$(ROUNDS) WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS=$(BENCH_ITERS) $(BINARIES)
 	@mkdir -p $(RESULTS_DIR)
-	./run_bench.sh $(BINARIES)
+	./run_bench.sh -n $(ROUNDS) $(BINARIES)
 
 quick-run:
 	rm -f $(BINARIES)
-	$(MAKE) QUICK_RUN=1 $(BINARIES)
+	$(MAKE) QUICK_RUN=1 ROUNDS=$(ROUNDS) WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS=$(BENCH_ITERS) $(BINARIES)
 	@mkdir -p $(RESULTS_DIR)
-	./run_bench.sh -n 1 $(BINARIES)
+	./run_bench.sh -n $(ROUNDS) $(BINARIES)
 
 clean:
 	rm -f $(BINARIES)

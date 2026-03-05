@@ -17,12 +17,17 @@
 #include <vector>
 
 #include "common.h"
-#if (SCAN_SIMULATION || REDUCTION_SIMULATION) && !defined(AOMP)
+#if SCAN_SIMULATION || REDUCTION_SIMULATION
+#ifdef AOMP
+#include "xteam_simulations_aomp.h"
+#else
 #include "xteam_simulations.h"
+#endif
 #endif
 
 #if QUICK_RUN
-static const std::array<uint64_t, 1> array_sizes{41943040};
+// static const std::array<uint64_t, 1> array_sizes{41943040};
+static const std::array<uint64_t, 1> array_sizes{177777777};
 #else
 static const std::array<uint64_t, 14> array_sizes{
     1,     100,     1024,    2048,     4096,     8192,      10000,
@@ -149,8 +154,12 @@ void gold_exclusive_dot(const T *a, const T *b, T *out, uint64_t n) {
 
 template <typename T> T reduce_sum(const T *__restrict in, uint64_t n) {
   T s = T(0);
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(+ : s)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(+ : s)
+#endif
   for (uint64_t i = 0; i < n; i++)
     s += in[i];
   return s;
@@ -158,29 +167,39 @@ template <typename T> T reduce_sum(const T *__restrict in, uint64_t n) {
 
 template <typename T> T reduce_max(const T *__restrict in, uint64_t n) {
   T m = std::numeric_limits<T>::lowest();
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(max : m)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(max : m)
+#endif
   for (uint64_t i = 0; i < n; i++)
-    if (in[i] > m)
-      m = in[i];
+    m = std::max(m, in[i]);
   return m;
 }
 
 template <typename T> T reduce_min(const T *__restrict in, uint64_t n) {
   T m = std::numeric_limits<T>::max();
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(min : m)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(min : m)
+#endif
   for (uint64_t i = 0; i < n; i++)
-    if (in[i] < m)
-      m = in[i];
+    m = std::min(m, in[i]);
   return m;
 }
 
 template <typename T>
 T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
   T s = T(0);
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(+ : s)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(+ : s)
+#endif
   for (uint64_t i = 0; i < n; i++)
     s += a[i] * b[i];
   return s;
@@ -194,8 +213,12 @@ T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 template <typename T>
 void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = T(0);
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, + : s)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
+#endif
   for (uint64_t i = 0; i < n; i++) {
     s += in[i];
 #pragma omp scan inclusive(s)
@@ -206,8 +229,12 @@ void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = T(0);
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, + : s)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
+#endif
   for (uint64_t i = 0; i < n; i++) {
     out[i] = s;
 #pragma omp scan exclusive(s)
@@ -218,11 +245,14 @@ void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = std::numeric_limits<T>::lowest();
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, max : m)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, max : m)
+#endif
   for (uint64_t i = 0; i < n; i++) {
-    if (in[i] > m)
-      m = in[i];
+    m = std::max(m, in[i]);
 #pragma omp scan inclusive(m)
     out[i] = m;
   }
@@ -231,24 +261,30 @@ void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = std::numeric_limits<T>::lowest();
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, max : m)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, max : m)
+#endif
   for (uint64_t i = 0; i < n; i++) {
     out[i] = m;
 #pragma omp scan exclusive(m)
-    if (in[i] > m)
-      m = in[i];
+    m = std::max(m, in[i]);
   }
 }
 
 template <typename T>
 void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = std::numeric_limits<T>::max();
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, min : m)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, min : m)
+#endif
   for (uint64_t i = 0; i < n; i++) {
-    if (in[i] < m)
-      m = in[i];
+    m = std::min(m, in[i]);
 #pragma omp scan inclusive(m)
     out[i] = m;
   }
@@ -257,13 +293,16 @@ void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = std::numeric_limits<T>::max();
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, min : m)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, min : m)
+#endif
   for (uint64_t i = 0; i < n; i++) {
     out[i] = m;
 #pragma omp scan exclusive(m)
-    if (in[i] < m)
-      m = in[i];
+    m = std::min(m, in[i]);
   }
 }
 
@@ -271,8 +310,12 @@ template <typename T>
 void scan_incl_dot(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
   T s = T(0);
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, + : s)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
+#endif
   for (uint64_t i = 0; i < n; i++) {
     s += a[i] * b[i];
 #pragma omp scan inclusive(s)
@@ -284,8 +327,12 @@ template <typename T>
 void scan_excl_dot(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
   T s = T(0);
+#if CODEGEN_AUTODETECTION
+#pragma omp target teams distribute parallel for reduction(inscan, + : s)
+#else
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
+#endif
   for (uint64_t i = 0; i < n; i++) {
     out[i] = s;
 #pragma omp scan exclusive(s)
@@ -417,6 +464,8 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
     // Cross-team reductions
     T gold_val;
+#if REDUCTION_TEST
+    // Cross-team reductions (codegen)
 
     gold_val = gold_reduce_sum(in1, n);
     r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_val, n, "red_sum", in1);
@@ -434,8 +483,8 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_val, n, "red_dot", in1,
                                    in2);
     print_result("red_dot", type_name, n, r);
+#endif // REDUCTION_TEST
 
-#ifndef AOMP
 #if REDUCTION_SIMULATION
     // Cross-team reductions (simulation)
     init_device_sim<T>();
@@ -459,7 +508,8 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     free_device_sim<T>();
 #endif // REDUCTION_SIMULATION
 
-    // Cross-team scans
+#if !defined(AOMP) && SCAN_TEST
+    // Cross-team scans (codegen; AOMP lacks inscan)
     gold_inclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_sum<T>, out, gold, n, "incl_sum",
                                  in1);
@@ -499,6 +549,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
                                  in1, in2);
     print_result("excl_dot", type_name, n, r);
+#endif // !defined(AOMP) && SCAN_TEST
 
 #if SCAN_SIMULATION
     // Cross-team scans (simulation)
@@ -547,8 +598,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     free_device_sim<T>();
 #endif // SCAN_SIMULATION
 
-#endif // AOMP
-
 #pragma omp target exit data map(delete : in1[0 : n], in2[0 : n], out[0 : n],  \
                                      gold[0 : n])
 
@@ -563,8 +612,11 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 // Main
 // =========================================================================
 int main(int argc, char **argv) {
-  std::cout << std::format("xteam benchmark — {} warmup, {} timed iterations\n",
-                           WARMUP_ITERS, BENCH_ITERS);
+  std::cout << std::format("xteam benchmark — {} warmup, {} timed iterations, "
+                           "{} teams, {} threads, codegen autodetection: {}\n",
+                           WARMUP_ITERS, BENCH_ITERS, XTEAM_NUM_TEAMS,
+                           XTEAM_NUM_THREADS,
+                           CODEGEN_AUTODETECTION ? "true" : "false");
   std::cout << "Array sizes: ";
   for (uint64_t sz : array_sizes)
     std::cout << std::format(" {}", sz);

@@ -6,26 +6,13 @@
 #include <limits>
 #include <omp.h>
 
-#include "common.h"
+#include "xteam_simulations_common.h"
 
-// Reduction simulation device state
-uint32_t *d_td = nullptr;
-template <typename T> T *d_team_vals = nullptr;
-
-// Scan simulation device state
+// Scan simulation device state (new decoupled look-back algorithm)
 uint32_t *d_status = nullptr;
 template <typename T> T *d_aggregates = nullptr;
 template <typename T> T *d_prefixes = nullptr;
 template <typename T> T *d_scan_out = nullptr;
-
-// =========================================================================
-// OpenMP device runtime definitions
-// =========================================================================
-
-#define _UI unsigned int
-#define _UL unsigned long
-#define _INLINE_ATTR_ __attribute__((flatten, always_inline))
-#define _RF_LDS volatile __attribute__((address_space(3)))
 
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 #define _XTEAMR_SCOPE __MEMORY_SCOPE_SYSTEM
@@ -98,43 +85,6 @@ void _INLINE_ATTR_ __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status,
                                     void (*rf)(_UL *, _UL), const _UL rnv,
                                     const uint64_t k, const uint64_t n,
                                     bool is_inclusive);
-
-void __kmpc_rfun_sum_d(double *val, double otherval);
-void __kmpc_rfun_sum_f(float *val, float otherval);
-void __kmpc_rfun_sum_i(int *val, int otherval);
-void __kmpc_rfun_sum_ui(_UI *val, _UI otherval);
-void __kmpc_rfun_sum_l(long *val, long otherval);
-void __kmpc_rfun_sum_ul(_UL *val, _UL otherval);
-void __kmpc_rfun_sum_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
-void __kmpc_rfun_sum_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
-void __kmpc_rfun_sum_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
-void __kmpc_rfun_sum_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
-void __kmpc_rfun_sum_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
-void __kmpc_rfun_sum_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
-void __kmpc_rfun_max_d(double *val, double otherval);
-void __kmpc_rfun_max_f(float *val, float otherval);
-void __kmpc_rfun_max_i(int *val, int otherval);
-void __kmpc_rfun_max_ui(_UI *val, _UI otherval);
-void __kmpc_rfun_max_l(long *val, long otherval);
-void __kmpc_rfun_max_ul(_UL *val, _UL otherval);
-void __kmpc_rfun_max_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
-void __kmpc_rfun_max_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
-void __kmpc_rfun_max_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
-void __kmpc_rfun_max_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
-void __kmpc_rfun_max_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
-void __kmpc_rfun_max_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
-void __kmpc_rfun_min_d(double *val, double otherval);
-void __kmpc_rfun_min_f(float *val, float otherval);
-void __kmpc_rfun_min_i(int *val, int otherval);
-void __kmpc_rfun_min_ui(_UI *val, _UI otherval);
-void __kmpc_rfun_min_l(long *val, long otherval);
-void __kmpc_rfun_min_ul(_UL *val, _UL otherval);
-void __kmpc_rfun_min_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
-void __kmpc_rfun_min_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
-void __kmpc_rfun_min_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
-void __kmpc_rfun_min_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
-void __kmpc_rfun_min_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
-void __kmpc_rfun_min_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
 }
 
 #else
@@ -184,43 +134,6 @@ void __kmpc_xteams_l(long v, long *result, uint32_t *status, long *aggregates,
 void __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status, _UL *aggregates,
                       _UL *prefixes, void (*rf)(_UL *, _UL), const _UL rnv,
                       const uint64_t k, const uint64_t n, bool is_inclusive) {}
-
-void __kmpc_rfun_sum_d(double *val, double otherval) {}
-void __kmpc_rfun_sum_f(float *val, float otherval) {}
-void __kmpc_rfun_sum_i(int *val, int otherval) {}
-void __kmpc_rfun_sum_ui(_UI *val, _UI otherval) {}
-void __kmpc_rfun_sum_l(long *val, long otherval) {}
-void __kmpc_rfun_sum_ul(_UL *val, _UL otherval) {}
-void __kmpc_rfun_sum_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
-void __kmpc_rfun_sum_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
-void __kmpc_rfun_sum_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
-void __kmpc_rfun_sum_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
-void __kmpc_rfun_sum_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
-void __kmpc_rfun_sum_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
-void __kmpc_rfun_max_d(double *val, double otherval) {}
-void __kmpc_rfun_max_f(float *val, float otherval) {}
-void __kmpc_rfun_max_i(int *val, int otherval) {}
-void __kmpc_rfun_max_ui(_UI *val, _UI otherval) {}
-void __kmpc_rfun_max_l(long *val, long otherval) {}
-void __kmpc_rfun_max_ul(_UL *val, _UL otherval) {}
-void __kmpc_rfun_max_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
-void __kmpc_rfun_max_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
-void __kmpc_rfun_max_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
-void __kmpc_rfun_max_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
-void __kmpc_rfun_max_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
-void __kmpc_rfun_max_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
-void __kmpc_rfun_min_d(double *val, double otherval) {}
-void __kmpc_rfun_min_f(float *val, float otherval) {}
-void __kmpc_rfun_min_i(int *val, int otherval) {}
-void __kmpc_rfun_min_ui(_UI *val, _UI otherval) {}
-void __kmpc_rfun_min_l(long *val, long otherval) {}
-void __kmpc_rfun_min_ul(_UL *val, _UL otherval) {}
-void __kmpc_rfun_min_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
-void __kmpc_rfun_min_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
-void __kmpc_rfun_min_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
-void __kmpc_rfun_min_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
-void __kmpc_rfun_min_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
-void __kmpc_rfun_min_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
 }
 
 #endif
@@ -234,7 +147,7 @@ using xteamr_fn_t = void (*)(T, T *, T *, uint32_t *, void (*)(T *, T),
                               void (*)(_RF_LDS T *, _RF_LDS T *), const T,
                               const uint64_t, const uint32_t, int);
 
-template <typename T> xteamr_fn_t<T> get_kmpc_xteamr_func() {
+template <typename T> constexpr xteamr_fn_t<T> get_kmpc_xteamr_func() {
   if constexpr (std::is_same_v<T, double>) {
     return __kmpc_xteamr_d;
   } else if constexpr (std::is_same_v<T, float>) {
@@ -253,7 +166,7 @@ template <typename T> xteamr_fn_t<T> get_kmpc_xteamr_func() {
 }
 
 template <typename T>
-void (*get_kmpc_xteams_func())(T, T *, uint32_t *, T *, T *, void (*)(T *, T),
+constexpr void (*get_kmpc_xteams_func())(T, T *, uint32_t *, T *, T *, void (*)(T *, T),
                                const T, const uint64_t, const uint64_t, bool) {
   if constexpr (std::is_same_v<T, double>) {
     return __kmpc_xteams_d;
@@ -272,125 +185,14 @@ void (*get_kmpc_xteams_func())(T, T *, uint32_t *, T *, T *, void (*)(T *, T),
   }
 }
 
-template <typename T> void (*get_rfun_sum_func())(T *, T) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_sum_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_sum_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_sum_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_sum_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_sum_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_sum_ul;
-  } else {
-    static_assert(false, "Unsupported type");
-  }
-}
-
-template <typename T> void (*get_rfun_max_func())(T *, T) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_max_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_max_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_max_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_max_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_max_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_max_ul;
-  } else {
-    static_assert(false, "Unsupported type");
-  }
-}
-
-template <typename T> void (*get_rfun_min_func())(T *, T) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_min_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_min_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_min_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_min_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_min_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_min_ul;
-  } else {
-    static_assert(false, "Unsupported type");
-  }
-}
-
-template <typename T>
-void (*get_rfun_sum_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_sum_lds_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_sum_lds_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_sum_lds_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_sum_lds_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_sum_lds_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_sum_lds_ul;
-  } else {
-    static_assert(false, "Unsupported type");
-  }
-}
-
-template <typename T>
-void (*get_rfun_max_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_max_lds_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_max_lds_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_max_lds_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_max_lds_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_max_lds_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_max_lds_ul;
-  } else {
-    static_assert(false, "Unsupported type");
-  }
-}
-
-template <typename T>
-void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_min_lds_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_min_lds_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_min_lds_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_min_lds_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_min_lds_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_min_lds_ul;
-  } else {
-    static_assert(false, "Unsupported type");
-  }
-}
-
 // =========================================================================
 // GPU cross-team reduction kernels
-// These are simulations for compilers without corresponding codegen support
+// These are simulations without using xteam-specific codegen
 // =========================================================================
 
 template <typename T> T reduce_sum_sim(const T *__restrict in, uint64_t n) {
-  T s = T(0);
   const T rnv = T(0);
+  T s = rnv;
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
@@ -409,8 +211,8 @@ template <typename T> T reduce_sum_sim(const T *__restrict in, uint64_t n) {
 }
 
 template <typename T> T reduce_max_sim(const T *__restrict in, uint64_t n) {
-  T s = T(0);
   const T rnv = std::numeric_limits<T>::lowest();
+  T s = rnv;
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
@@ -429,8 +231,8 @@ template <typename T> T reduce_max_sim(const T *__restrict in, uint64_t n) {
 }
 
 template <typename T> T reduce_min_sim(const T *__restrict in, uint64_t n) {
-  T s = T(0);
   const T rnv = std::numeric_limits<T>::max();
+  T s = rnv;
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
@@ -450,8 +252,8 @@ template <typename T> T reduce_min_sim(const T *__restrict in, uint64_t n) {
 
 template <typename T>
 T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
-  T s = T(0);
   const T rnv = T(0);
+  T s = rnv;
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
@@ -471,7 +273,7 @@ T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
 
 // =========================================================================
 // GPU cross-team scan kernels
-// These are simulations for compilers without corresponding codegen support
+// These are simulations without using xteam-specific codegen
 // =========================================================================
 
 template <typename T>
