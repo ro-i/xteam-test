@@ -369,12 +369,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Sum>, out, gold, n,
                                  "incl_sum_sim_v1", in1);
     print_result("incl_sum_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v2<T, ScanOp::Sum>, out, gold, n,
-                                 "incl_sum_sim_v2", in1);
-    print_result("incl_sum_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v3<T, ScanOp::Sum>, out, gold, n,
-                                 "incl_sum_sim_v3", in1);
-    print_result("incl_sum_sim_v3", type_name, n, r);
     #endif
 
     gold_exclusive_sum(in1, gold, n);
@@ -385,12 +379,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Sum>, out, gold, n,
                                  "excl_sum_sim_v1", in1);
     print_result("excl_sum_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v2<T, ScanOp::Sum>, out, gold, n,
-                                 "excl_sum_sim_v2", in1);
-    print_result("excl_sum_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v3<T, ScanOp::Sum>, out, gold, n,
-                                 "excl_sum_sim_v3", in1);
-    print_result("excl_sum_sim_v3", type_name, n, r);
     #endif
 
     gold_inclusive_max(in1, gold, n);
@@ -401,12 +389,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Max>, out, gold, n,
                                  "incl_max_sim_v1", in1);
     print_result("incl_max_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v2<T, ScanOp::Max>, out, gold, n,
-                                 "incl_max_sim_v2", in1);
-    print_result("incl_max_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v3<T, ScanOp::Max>, out, gold, n,
-                                 "incl_max_sim_v3", in1);
-    print_result("incl_max_sim_v3", type_name, n, r);
     #endif
 
     gold_exclusive_max(in1, gold, n);
@@ -417,12 +399,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Max>, out, gold, n,
                                  "excl_max_sim_v1", in1);
     print_result("excl_max_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v2<T, ScanOp::Max>, out, gold, n,
-                                 "excl_max_sim_v2", in1);
-    print_result("excl_max_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v3<T, ScanOp::Max>, out, gold, n,
-                                 "excl_max_sim_v3", in1);
-    print_result("excl_max_sim_v3", type_name, n, r);
     #endif
 
     gold_inclusive_min(in1, gold, n);
@@ -433,12 +409,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Min>, out, gold, n,
                                  "incl_min_sim_v1", in1);
     print_result("incl_min_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v2<T, ScanOp::Min>, out, gold, n,
-                                 "incl_min_sim_v2", in1);
-    print_result("incl_min_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v3<T, ScanOp::Min>, out, gold, n,
-                                 "incl_min_sim_v3", in1);
-    print_result("incl_min_sim_v3", type_name, n, r);
     #endif
 
     gold_exclusive_min(in1, gold, n);
@@ -449,12 +419,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Min>, out, gold, n,
                                  "excl_min_sim_v1", in1);
     print_result("excl_min_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v2<T, ScanOp::Min>, out, gold, n,
-                                 "excl_min_sim_v2", in1);
-    print_result("excl_min_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v3<T, ScanOp::Min>, out, gold, n,
-                                 "excl_min_sim_v3", in1);
-    print_result("excl_min_sim_v3", type_name, n, r);
     #endif
 
     gold_inclusive_dot(in1, in2, gold, n);
@@ -465,12 +429,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v1<T>, out, gold, n,
                                  "incl_dot_sim_v1", in1, in2);
     print_result("incl_dot_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v2<T>, out, gold, n,
-                                 "incl_dot_sim_v2", in1, in2);
-    print_result("incl_dot_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v3<T>, out, gold, n,
-                                 "incl_dot_sim_v3", in1, in2);
-    print_result("incl_dot_sim_v3", type_name, n, r);
     #endif
 
     gold_exclusive_dot(in1, in2, gold, n);
@@ -481,12 +439,6 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v1<T>, out, gold, n,
                                  "excl_dot_sim_v1", in1, in2);
     print_result("excl_dot_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v2<T>, out, gold, n,
-                                 "excl_dot_sim_v2", in1, in2);
-    print_result("excl_dot_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v3<T>, out, gold, n,
-                                 "excl_dot_sim_v3", in1, in2);
-    print_result("excl_dot_sim_v3", type_name, n, r);
     #endif
 
     free_device_sim<T>();
