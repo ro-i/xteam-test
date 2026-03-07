@@ -1,22 +1,9 @@
 // xteam_bench.cpp — OpenMP cross-team performance & correctness benchmark
 
-#include <algorithm>
-#include <array>
-#include <cfloat>
-#include <chrono>
-#include <climits>
-#include <cmath>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
-#include <format>
-#include <iostream>
-#include <limits>
-#include <numeric>
-#include <optional>
-#include <vector>
+#include <omp.h>
 
-#include "common.h"
+#include "bench_common.h"
+
 #if SCAN_SIMULATION || REDUCTION_SIMULATION
 #ifdef AOMP
 #include "xteam_simulations_aomp.h"
@@ -24,129 +11,6 @@
 #include "xteam_simulations.h"
 #endif
 #endif
-
-#if QUICK_RUN
-// static const std::array<uint64_t, 1> array_sizes{41943040};
-static const std::array<uint64_t, 1> array_sizes{177777777};
-#else
-static const std::array<uint64_t, 14> array_sizes{
-    1,     100,     1024,    2048,     4096,     8192,      10000,
-    81920, 1000000, 4194304, 23445657, 41943040, 100000000, 177777777};
-#endif
-
-using Clock = std::chrono::high_resolution_clock;
-
-struct TimingResult {
-  double min_s, max_s, avg_s;
-  double best_mbps, avg_mbps;
-};
-
-// =========================================================================
-// Utility functions
-// =========================================================================
-
-template <typename T, bool is_fp> void init_data(T *arr1, T *arr2, uint64_t n) {
-  srand(42); // always generate the same "random" numbers
-  for (uint64_t i = 0; i < n; i++) {
-    if constexpr (is_fp) {
-      arr1[i] = T((rand() % 100) / 100.0);
-      arr2[i] = T((rand() % 100) / 100.0);
-    } else {
-      arr1[i] = T(rand() % 1000);
-      arr2[i] = T(rand() % 1000);
-    }
-  }
-}
-
-// =========================================================================
-// Gold (CPU) reference implementations
-// =========================================================================
-
-// Gold cross-team reductions
-template <typename T> T gold_reduce_sum(const T *in, uint64_t n) {
-  T a = T(0);
-  for (uint64_t i = 0; i < n; i++)
-    a += in[i];
-  return a;
-}
-template <typename T> T gold_reduce_max(const T *in, uint64_t n) {
-  T a = std::numeric_limits<T>::lowest();
-  for (uint64_t i = 0; i < n; i++)
-    a = std::max(a, in[i]);
-  return a;
-}
-template <typename T> T gold_reduce_min(const T *in, uint64_t n) {
-  T a = std::numeric_limits<T>::max();
-  for (uint64_t i = 0; i < n; i++)
-    a = std::min(a, in[i]);
-  return a;
-}
-template <typename T> T gold_reduce_dot(const T *a, const T *b, uint64_t n) {
-  T s = T(0);
-  for (uint64_t i = 0; i < n; i++)
-    s += a[i] * b[i];
-  return s;
-}
-
-// Gold cross-team scans
-template <typename T> void gold_inclusive_sum(const T *in, T *out, uint64_t n) {
-  T a = T(0);
-  for (uint64_t i = 0; i < n; i++) {
-    a += in[i];
-    out[i] = a;
-  }
-}
-template <typename T> void gold_exclusive_sum(const T *in, T *out, uint64_t n) {
-  T a = T(0);
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = a;
-    a += in[i];
-  }
-}
-template <typename T> void gold_inclusive_max(const T *in, T *out, uint64_t n) {
-  T a = std::numeric_limits<T>::lowest();
-  for (uint64_t i = 0; i < n; i++) {
-    a = std::max(a, in[i]);
-    out[i] = a;
-  }
-}
-template <typename T> void gold_exclusive_max(const T *in, T *out, uint64_t n) {
-  T a = std::numeric_limits<T>::lowest();
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = a;
-    a = std::max(a, in[i]);
-  }
-}
-template <typename T> void gold_inclusive_min(const T *in, T *out, uint64_t n) {
-  T a = std::numeric_limits<T>::max();
-  for (uint64_t i = 0; i < n; i++) {
-    a = std::min(a, in[i]);
-    out[i] = a;
-  }
-}
-template <typename T> void gold_exclusive_min(const T *in, T *out, uint64_t n) {
-  T a = std::numeric_limits<T>::max();
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = a;
-    a = std::min(a, in[i]);
-  }
-}
-template <typename T>
-void gold_inclusive_dot(const T *a, const T *b, T *out, uint64_t n) {
-  T s = T(0);
-  for (uint64_t i = 0; i < n; i++) {
-    s += a[i] * b[i];
-    out[i] = s;
-  }
-}
-template <typename T>
-void gold_exclusive_dot(const T *a, const T *b, T *out, uint64_t n) {
-  T s = T(0);
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = s;
-    s += a[i] * b[i];
-  }
-}
 
 // =========================================================================
 // GPU cross-team reduction kernels
@@ -342,54 +206,8 @@ void scan_excl_dot(const T *__restrict a, const T *__restrict b,
 #endif // AOMP
 
 // =========================================================================
-// Benchmark harness
+// Benchmark harness (OMP-specific run functions)
 // =========================================================================
-
-template <typename T, bool is_fp>
-bool check_single(T computed, T gold, const char *label,
-                  std::optional<uint64_t> index = std::nullopt) {
-  if constexpr (!is_fp) {
-    if (computed == gold)
-      return true;
-    if (index)
-      std::cerr << std::format("FAIL {} at {}: got {}, expected {}\n", label,
-                               *index, computed, gold);
-    else
-      std::cerr << std::format("FAIL {}: got {}, expected {}\n", label,
-                               computed, gold);
-    return false;
-  }
-  double g = (double)gold, c = (double)computed;
-  double rel = (g != 0.0) ? std::abs((c - g) / g) : std::abs(c - g);
-  if (rel <= 1e-6)
-    return true;
-  if (index)
-    std::cerr << std::format("FAIL {} at {}: got {}, expected {} (rel={})\n",
-                             label, *index, c, g, rel);
-  else
-    std::cerr << std::format("FAIL {}: got {}, expected {} (rel={})\n", label,
-                             c, g, rel);
-  return false;
-}
-
-template <typename T, bool is_fp>
-bool check(const T *computed, const T *gold, uint64_t n, const char *label) {
-  for (uint64_t i = 0; i < n; i++) {
-    if (!check_single<T, is_fp>(computed[i], gold[i], label, i))
-      return false;
-  }
-  return true;
-}
-
-TimingResult create_timing_result(const std::vector<double> &times, uint64_t n,
-                                  uint64_t data_bytes) {
-  auto [mn, mx] = std::minmax_element(times.begin(), times.end());
-  double avg =
-      std::accumulate(times.begin(), times.end(), 0.0) / (double)(times.size());
-
-  return TimingResult{*mn, *mx, avg, 1e-6 * data_bytes / *mn,
-                      1e-6 * data_bytes / avg};
-}
 
 template <typename T, bool is_fp, typename Kernel, typename... Inputs>
 std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
@@ -432,18 +250,6 @@ std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
   }
 
   return create_timing_result(times, n, sizeof(T) * n * sizeof...(Inputs));
-}
-
-void print_result(const char *test, const char *type, uint64_t n,
-                  const std::optional<TimingResult> &r) {
-  if (!r) {
-    std::cerr << std::format("{:<24} {:<8} {:>10}  FAIL\n", test, type, n);
-    return;
-  }
-  std::cout << std::format("{:<24} {:<8} {:>10}  {:>10.6f}  {:>10.6f}  "
-                           "{:>10.6f}  {:>10.0f}  {:>10.0f}\n",
-                           test, type, n, r->min_s, r->max_s, r->avg_s,
-                           r->best_mbps, r->avg_mbps);
 }
 
 // =========================================================================
@@ -559,41 +365,135 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     r = run_bench_scan<T, is_fp>(scan_incl_sum_sim<T>, out, gold, n,
                                  "incl_sum_sim", in1);
     print_result("incl_sum_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim_v1<T>, out, gold, n,
+                                 "incl_sum_sim_v1", in1);
+    print_result("incl_sum_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim_v2<T>, out, gold, n,
+                                 "incl_sum_sim_v2", in1);
+    print_result("incl_sum_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim_v3<T>, out, gold, n,
+                                 "incl_sum_sim_v3", in1);
+    print_result("incl_sum_sim_v3", type_name, n, r);
+    {
+      void (*v4_fn)(const T *, T *, uint64_t) = scan_incl_sum_sim_v4;
+      r = run_bench_scan<T, is_fp>(v4_fn, out, gold, n, "incl_sum_sim_v4",
+                                   in1);
+      print_result("incl_sum_sim_v4", type_name, n, r);
+    }
+    #endif
 
     gold_exclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_sum_sim<T>, out, gold, n,
                                  "excl_sum_sim", in1);
     print_result("excl_sum_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim_v1<T>, out, gold, n,
+                                 "excl_sum_sim_v1", in1);
+    print_result("excl_sum_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim_v2<T>, out, gold, n,
+                                 "excl_sum_sim_v2", in1);
+    print_result("excl_sum_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim_v3<T>, out, gold, n,
+                                 "excl_sum_sim_v3", in1);
+    print_result("excl_sum_sim_v3", type_name, n, r);
+    #endif
 
     gold_inclusive_max(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_max_sim<T>, out, gold, n,
                                  "incl_max_sim", in1);
     print_result("incl_max_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_incl_max_sim_v1<T>, out, gold, n,
+                                 "incl_max_sim_v1", in1);
+    print_result("incl_max_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_max_sim_v2<T>, out, gold, n,
+                                 "incl_max_sim_v2", in1);
+    print_result("incl_max_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_max_sim_v3<T>, out, gold, n,
+                                 "incl_max_sim_v3", in1);
+    print_result("incl_max_sim_v3", type_name, n, r);
+    #endif
 
     gold_exclusive_max(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_max_sim<T>, out, gold, n,
                                  "excl_max_sim", in1);
     print_result("excl_max_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_excl_max_sim_v1<T>, out, gold, n,
+                                 "excl_max_sim_v1", in1);
+    print_result("excl_max_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_max_sim_v2<T>, out, gold, n,
+                                 "excl_max_sim_v2", in1);
+    print_result("excl_max_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_max_sim_v3<T>, out, gold, n,
+                                 "excl_max_sim_v3", in1);
+    print_result("excl_max_sim_v3", type_name, n, r);
+    #endif
 
     gold_inclusive_min(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_min_sim<T>, out, gold, n,
                                  "incl_min_sim", in1);
     print_result("incl_min_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_incl_min_sim_v1<T>, out, gold, n,
+                                 "incl_min_sim_v1", in1);
+    print_result("incl_min_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_min_sim_v2<T>, out, gold, n,
+                                 "incl_min_sim_v2", in1);
+    print_result("incl_min_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_min_sim_v3<T>, out, gold, n,
+                                 "incl_min_sim_v3", in1);
+    print_result("incl_min_sim_v3", type_name, n, r);
+    #endif
 
     gold_exclusive_min(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_min_sim<T>, out, gold, n,
                                  "excl_min_sim", in1);
     print_result("excl_min_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_excl_min_sim_v1<T>, out, gold, n,
+                                 "excl_min_sim_v1", in1);
+    print_result("excl_min_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_min_sim_v2<T>, out, gold, n,
+                                 "excl_min_sim_v2", in1);
+    print_result("excl_min_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_min_sim_v3<T>, out, gold, n,
+                                 "excl_min_sim_v3", in1);
+    print_result("excl_min_sim_v3", type_name, n, r);
+    #endif
 
     gold_inclusive_dot(in1, in2, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_dot_sim<T>, out, gold, n,
                                  "incl_dot_sim", in1, in2);
     print_result("incl_dot_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v1<T>, out, gold, n,
+                                 "incl_dot_sim_v1", in1, in2);
+    print_result("incl_dot_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v2<T>, out, gold, n,
+                                 "incl_dot_sim_v2", in1, in2);
+    print_result("incl_dot_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v3<T>, out, gold, n,
+                                 "incl_dot_sim_v3", in1, in2);
+    print_result("incl_dot_sim_v3", type_name, n, r);
+    #endif
 
     gold_exclusive_dot(in1, in2, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_dot_sim<T>, out, gold, n,
                                  "excl_dot_sim", in1, in2);
     print_result("excl_dot_sim", type_name, n, r);
+    #ifndef AOMP
+    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v1<T>, out, gold, n,
+                                 "excl_dot_sim_v1", in1, in2);
+    print_result("excl_dot_sim_v1", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v2<T>, out, gold, n,
+                                 "excl_dot_sim_v2", in1, in2);
+    print_result("excl_dot_sim_v2", type_name, n, r);
+    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v3<T>, out, gold, n,
+                                 "excl_dot_sim_v3", in1, in2);
+    print_result("excl_dot_sim_v3", type_name, n, r);
+    #endif
 
     free_device_sim<T>();
 #endif // SCAN_SIMULATION
@@ -622,13 +522,7 @@ int main(int argc, char **argv) {
     std::cout << std::format(" {}", sz);
   std::cout << "\n\n";
 
-  std::cout << std::format(
-      "{:>24} {:>8} {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}\n", "test",
-      "type", "N", "min(s)", "max(s)", "avg(s)", "best MB/s", "avg MB/s");
-  std::cout << std::format(
-      "{:->24} {:->8} {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}\n",
-      "------------------------", "--------", "----------", "----------",
-      "----------", "----------", "----------", "----------");
+  print_header();
 
   std::cout << "\n--- int ---\n";
   run_type<int, false>("int");

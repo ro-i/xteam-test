@@ -46,9 +46,9 @@ LABELS :=
 ifneq ($(strip $(CXX_dev)),)
   LABELS += dev
 endif
-ifneq ($(strip $(CXX_aomp)),)
-  LABELS += aomp
-endif
+# ifneq ($(strip $(CXX_aomp)),)
+#   LABELS += aomp
+# endif
 
 ifeq ($(strip $(LABELS)),)
   $(info )
@@ -62,8 +62,13 @@ BINARIES = $(foreach L,$(LABELS),xteam_bench_$(L))
 # ── Output directory for results ────────────────────────────────────────────
 RESULTS_DIR ?= results
 
+# ── HIP build configuration ──────────────────────────────────────────────────
+HIP_SRC       = xteam_bench_hip.cpp
+DEVICE_RTL_BC = $(shell realpath $(shell dirname $(CXX_dev))/../lib/amdgcn-amd-amdhsa/libomptarget-amdgpu.bc 2>/dev/null)
+HIP_COMMON    = -x hip -O2 --offload-arch=$(OFFLOAD_ARCH) -std=c++20
+
 # ── Targets ─────────────────────────────────────────────────────────────────
-.PHONY: all run quick-run clean help
+.PHONY: all run quick-run clean help hip quick-hip
 
 all:
 	rm -f $(BINARIES)
@@ -94,8 +99,21 @@ quick-run:
 	@mkdir -p $(RESULTS_DIR)
 	./run_bench.sh -n $(ROUNDS) $(BINARIES)
 
+hip:
+	rm -f xteam_bench_hip
+	@test -n "$(CXX_dev)" || { echo "ERROR: CXX_dev is not set"; exit 1; }
+	@test -f "$(DEVICE_RTL_BC)" || { echo "ERROR: device RTL not found at $(DEVICE_RTL_BC)"; exit 1; }
+	$(CXX_dev) $(HIP_COMMON) -fgpu-rdc --offload-new-driver -save-temps \
+	  -Xoffload-linker-amdgcn-amd-amdhsa $(DEVICE_RTL_BC) \
+	  $(DEFS) -o xteam_bench_hip $(HIP_SRC)
+	@echo "Built xteam_bench_hip (HIP) with $(CXX_dev)"
+
+quick-hip:
+	rm -f xteam_bench_hip
+	$(MAKE) QUICK_RUN=1 ROUNDS=$(ROUNDS) WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS=$(BENCH_ITERS) hip
+
 clean:
-	rm -f $(BINARIES)
+	rm -f $(BINARIES) xteam_bench_hip
 	rm -rf $(RESULTS_DIR)
 
 help:
@@ -105,6 +123,8 @@ help:
 	@echo "  all              Build all configured compilers"
 	@echo "  quick            Build all configured compilers for only one array size"
 	@echo "  (quick-)run      Run binaries (interleaved) via run_bench.sh (default: 5 rounds / quick run: 1 round)"
+	@echo "  hip              Build HIP binary"
+	@echo "  quick-hip        Build HIP binary for only one array size"
 	@echo "  clean            Remove binaries and results"
 	@echo ""
 	@echo "Variables:"
