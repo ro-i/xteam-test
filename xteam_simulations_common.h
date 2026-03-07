@@ -6,8 +6,6 @@
 #include <limits>
 #include <omp.h>
 
-#include "common.h"
-
 // Common reduction/scan device state
 uint32_t *d_td = nullptr;
 template <typename T> T *d_team_vals = nullptr;

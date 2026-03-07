@@ -8,3 +8,4 @@ xteam_bench_*
 *.o
 *.out
 *.s
+*.tmp

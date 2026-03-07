@@ -8,8 +8,11 @@
 #ifndef WARMUP_ITERS
 #define WARMUP_ITERS 2
 #endif
-#ifndef BENCH_ITERS
-#define BENCH_ITERS 1000
+#ifndef BENCH_ITERS_REDUCTION
+#define BENCH_ITERS_REDUCTION 1000
+#endif
+#ifndef BENCH_ITERS_SCAN
+#define BENCH_ITERS_SCAN 10
 #endif
 #ifndef QUICK_RUN
 #define QUICK_RUN 0
@@ -30,7 +33,7 @@
 #define XTEAM_NUM_THREADS 512
 #endif
 #ifndef XTEAM_NUM_TEAMS
-#define XTEAM_NUM_TEAMS 416 // 104
+#define XTEAM_NUM_TEAMS 208 // gfx90a number of CUs: 104
 #endif
 // If true, let codegen for reduction/scan determine num_teams and num_threads.
 #ifndef CODEGEN_AUTODETECTION

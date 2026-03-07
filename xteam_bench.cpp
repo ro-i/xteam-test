@@ -213,8 +213,8 @@ template <typename T, bool is_fp, typename Kernel, typename... Inputs>
 std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
                                            uint64_t n, const char *label,
                                            Inputs... inputs) {
-  std::vector<double> times(BENCH_ITERS);
-  for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS; t++) {
+  std::vector<double> times(BENCH_ITERS_SCAN);
+  for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS_SCAN; t++) {
     auto t1 = Clock::now();
     kernel(inputs..., out, n);
     auto t2 = Clock::now();
@@ -235,8 +235,8 @@ template <typename T, bool is_fp, typename Kernel, typename... Inputs>
 std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
                                              const char *label,
                                              Inputs... inputs) {
-  std::vector<double> times(BENCH_ITERS);
-  for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS; t++) {
+  std::vector<double> times(BENCH_ITERS_REDUCTION);
+  for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS_REDUCTION; t++) {
     auto t1 = Clock::now();
     T result = kernel(inputs..., n);
     auto t2 = Clock::now();
@@ -506,10 +506,11 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 // Main
 // =========================================================================
 int main(int argc, char **argv) {
-  std::cout << std::format("xteam benchmark — {} warmup, {} timed iterations, "
+  std::cout << std::format("xteam benchmark — {} warmup, {} timed iterations "
+                           "(reduction), {} timed iterations (scan), "
                            "{} teams, {} threads, codegen autodetection: {}\n",
-                           WARMUP_ITERS, BENCH_ITERS, XTEAM_NUM_TEAMS,
-                           XTEAM_NUM_THREADS,
+                           WARMUP_ITERS, BENCH_ITERS_REDUCTION,
+                           BENCH_ITERS_SCAN, XTEAM_NUM_TEAMS, XTEAM_NUM_THREADS,
                            CODEGEN_AUTODETECTION ? "true" : "false");
   std::cout << "Array sizes: ";
   for (uint64_t sz : array_sizes)
