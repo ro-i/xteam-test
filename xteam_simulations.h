@@ -3,10 +3,10 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
-#include <limits>
 #include <omp.h>
 
 #include "xteam_simulations_common.h"
+#include "common.h"
 
 // Scan simulation device state (new decoupled look-back algorithm)
 uint32_t *d_status = nullptr;
@@ -20,65 +20,42 @@ template <typename T> T *d_scan_out = nullptr;
 #define _XTEAMR_SCOPE 0
 #endif
 
+#define _XTEAMR_FUNC(T, TS, ATTR, BODY)                                        \
+  ATTR void __kmpc_xteamr_##TS(                                                \
+      T v, T *r_ptr, T *tvs, uint32_t *td, void (*_rf)(T *, T),                \
+      void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T rnv,                  \
+      const uint64_t k, const uint32_t numteams, int Scope) BODY
+
+#define _XTEAMR_FUNC_ALL(ATTR, BODY)                                           \
+  _XTEAMR_FUNC(double, d, ATTR, BODY)                                          \
+  _XTEAMR_FUNC(float, f, ATTR, BODY)                                           \
+  _XTEAMR_FUNC(int, i, ATTR, BODY)                                             \
+  _XTEAMR_FUNC(_UI, ui, ATTR, BODY)                                            \
+  _XTEAMR_FUNC(long, l, ATTR, BODY)                                            \
+  _XTEAMR_FUNC(_UL, ul, ATTR, BODY)
+
+#define _XTEAMS_FUNC(T, TS, ATTR, BODY)                                        \
+  ATTR void __kmpc_xteams_##TS(                                                \
+      T v, T *result, uint32_t *status, T *aggregates, T *prefixes,            \
+      void (*_rf)(T *, T), const T rnv, const uint64_t k) BODY
+
+#define _XTEAMS_FUNC_ALL(ATTR, BODY)                                           \
+  _XTEAMS_FUNC(double, d, ATTR, BODY)                                          \
+  _XTEAMS_FUNC(float, f, ATTR, BODY)                                           \
+  _XTEAMS_FUNC(int, i, ATTR, BODY)                                             \
+  _XTEAMS_FUNC(_UI, ui, ATTR, BODY)                                            \
+  _XTEAMS_FUNC(long, l, ATTR, BODY)                                            \
+  _XTEAMS_FUNC(_UL, ul, ATTR, BODY)
+
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 
 // Device compilation: declarations resolved from device runtime bitcode.
 extern "C" {
 // Reduction functions
-void _INLINE_ATTR_ __kmpc_xteamr_d(double v, double *r_ptr, double *tvs,
-                                   uint32_t *td, void (*_rf)(double *, double),
-                                   void (*_rf_lds)(_RF_LDS double *,
-                                                   _RF_LDS double *),
-                                   const double rnv, const uint64_t k,
-                                   const uint32_t numteams, int Scope);
-void _INLINE_ATTR_ __kmpc_xteamr_f(float v, float *r_ptr, float *tvs,
-                                   uint32_t *td, void (*_rf)(float *, float),
-                                   void (*_rf_lds)(_RF_LDS float *,
-                                                   _RF_LDS float *),
-                                   const float rnv, const uint64_t k,
-                                   const uint32_t numteams, int Scope);
-void _INLINE_ATTR_ __kmpc_xteamr_i(
-    int v, int *r_ptr, int *tvs, uint32_t *td, void (*_rf)(int *, int),
-    void (*_rf_lds)(_RF_LDS int *, _RF_LDS int *), const int rnv,
-    const uint64_t k, const uint32_t numteams, int Scope);
-void _INLINE_ATTR_ __kmpc_xteamr_ui(
-    _UI v, _UI *r_ptr, _UI *tvs, uint32_t *td, void (*_rf)(_UI *, _UI),
-    void (*_rf_lds)(_RF_LDS _UI *, _RF_LDS _UI *), const _UI rnv,
-    const uint64_t k, const uint32_t numteams, int Scope);
-void _INLINE_ATTR_ __kmpc_xteamr_l(
-    long v, long *r_ptr, long *tvs, uint32_t *td, void (*_rf)(long *, long),
-    void (*_rf_lds)(_RF_LDS long *, _RF_LDS long *), const long rnv,
-    const uint64_t k, const uint32_t numteams, int Scope);
-void _INLINE_ATTR_ __kmpc_xteamr_ul(
-    _UL v, _UL *r_ptr, _UL *tvs, uint32_t *td, void (*_rf)(_UL *, _UL),
-    void (*_rf_lds)(_RF_LDS _UL *, _RF_LDS _UL *), const _UL rnv,
-    const uint64_t k, const uint32_t numteams, int Scope);
+_XTEAMR_FUNC_ALL(_INLINE_ATTR_, ;)
 
 // Scan functions
-void _INLINE_ATTR_ __kmpc_xteams_d(double v, double *result, uint32_t *status,
-                                   double *aggregates, double *prefixes,
-                                   void (*rf)(double *, double),
-                                   const double rnv, const uint64_t k);
-void _INLINE_ATTR_ __kmpc_xteams_f(float v, float *result, uint32_t *status,
-                                   float *aggregates, float *prefixes,
-                                   void (*rf)(float *, float), const float rnv,
-                                   const uint64_t k);
-void _INLINE_ATTR_ __kmpc_xteams_i(int v, int *result, uint32_t *status,
-                                   int *aggregates, int *prefixes,
-                                   void (*rf)(int *, int), const int rnv,
-                                   const uint64_t k);
-void _INLINE_ATTR_ __kmpc_xteams_ui(_UI v, _UI *result, uint32_t *status,
-                                    _UI *aggregates, _UI *prefixes,
-                                    void (*rf)(_UI *, _UI), const _UI rnv,
-                                    const uint64_t k);
-void _INLINE_ATTR_ __kmpc_xteams_l(long v, long *result, uint32_t *status,
-                                   long *aggregates, long *prefixes,
-                                   void (*rf)(long *, long), const long rnv,
-                                   const uint64_t k);
-void _INLINE_ATTR_ __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status,
-                                    _UL *aggregates, _UL *prefixes,
-                                    void (*rf)(_UL *, _UL), const _UL rnv,
-                                    const uint64_t k);
+_XTEAMS_FUNC_ALL(_INLINE_ATTR_, ;)
 }
 
 #else
@@ -86,51 +63,18 @@ void _INLINE_ATTR_ __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status,
 // Host compilation: empty stubs so the host linker is satisfied.
 extern "C" {
 // Reduction functions
-void __kmpc_xteamr_d(double, double *, double *, uint32_t *,
-                     void (*)(double *, double),
-                     void (*)(_RF_LDS double *, _RF_LDS double *), const double,
-                     const uint64_t, const uint32_t, int) {}
-void __kmpc_xteamr_f(float, float *, float *, uint32_t *,
-                     void (*)(float *, float),
-                     void (*)(_RF_LDS float *, _RF_LDS float *), const float,
-                     const uint64_t, const uint32_t, int) {}
-void __kmpc_xteamr_i(int, int *, int *, uint32_t *, void (*)(int *, int),
-                     void (*)(_RF_LDS int *, _RF_LDS int *), const int,
-                     const uint64_t, const uint32_t, int) {}
-void __kmpc_xteamr_ui(_UI, _UI *, _UI *, uint32_t *, void (*)(_UI *, _UI),
-                      void (*)(_RF_LDS _UI *, _RF_LDS _UI *), const _UI,
-                      const uint64_t, const uint32_t, int) {}
-void __kmpc_xteamr_l(long, long *, long *, uint32_t *, void (*)(long *, long),
-                     void (*)(_RF_LDS long *, _RF_LDS long *), const long,
-                     const uint64_t, const uint32_t, int) {}
-void __kmpc_xteamr_ul(_UL, _UL *, _UL *, uint32_t *, void (*)(_UL *, _UL),
-                      void (*)(_RF_LDS _UL *, _RF_LDS _UL *), const _UL,
-                      const uint64_t, const uint32_t, int) {}
+_XTEAMR_FUNC_ALL( , {})
 
 // Scan functions
-void __kmpc_xteams_d(double v, double *result, uint32_t *status,
-                     double *aggregates, double *prefixes,
-                     void (*rf)(double *, double), const double rnv,
-                     const uint64_t k) {}
-void __kmpc_xteams_f(float v, float *result, uint32_t *status,
-                     float *aggregates, float *prefixes,
-                     void (*rf)(float *, float), const float rnv,
-                     const uint64_t k) {}
-void __kmpc_xteams_i(int v, int *result, uint32_t *status, int *aggregates,
-                     int *prefixes, void (*rf)(int *, int), const int rnv,
-                     const uint64_t k) {}
-void __kmpc_xteams_ui(_UI v, _UI *result, uint32_t *status, _UI *aggregates,
-                      _UI *prefixes, void (*rf)(_UI *, _UI), const _UI rnv,
-                      const uint64_t k) {}
-void __kmpc_xteams_l(long v, long *result, uint32_t *status, long *aggregates,
-                     long *prefixes, void (*rf)(long *, long), const long rnv,
-                     const uint64_t k) {}
-void __kmpc_xteams_ul(_UL v, _UL *result, uint32_t *status, _UL *aggregates,
-                      _UL *prefixes, void (*rf)(_UL *, _UL), const _UL rnv,
-                      const uint64_t k) {}
+_XTEAMS_FUNC_ALL( , {})
 }
 
 #endif
+
+#undef _XTEAMR_FUNC
+#undef _XTEAMR_FUNC_ALL
+#undef _XTEAMS_FUNC
+#undef _XTEAMS_FUNC_ALL
 
 // =========================================================================
 // Helper functions

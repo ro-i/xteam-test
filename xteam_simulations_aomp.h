@@ -1,6 +1,7 @@
 #pragma once
 
 #include "xteam_simulations_common.h"
+#include "common.h"
 
 // Scan simulation device state (old 2-kernel algorithm)
 template <typename T> T *d_storage = nullptr;
@@ -28,48 +29,46 @@ template <typename T> T *d_storage = nullptr;
 // =========================================================================
 
 // Reduction: (v, r_ptr, tvs, td, rf, rf_lds, iv, k, numteams, Scope)
-#define _XTEAMR_DEF(T, TS, SUFFIX, ATTR, BODY)                                \
-ATTR void __kmpc_xteamr_##TS##SUFFIX(                                          \
-    T v, T *r_ptr, T *tvs, uint32_t *td, void (*_rf)(T *, T),                 \
-    void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T iv,                    \
-    const uint64_t k, const uint32_t numteams, int Scope) BODY
+#define _XTEAMR_FUNC(T, TS, SUFFIX, ATTR, BODY)                                \
+  ATTR void __kmpc_xteamr_##TS##SUFFIX(                                        \
+      T v, T *r_ptr, T *tvs, uint32_t *td, void (*_rf)(T *, T),                \
+      void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T iv, const uint64_t k, \
+      const uint32_t numteams, int Scope) BODY
 
-#define _XTEAMR_DEF_ALL(SUFFIX, ATTR, BODY)                                   \
-  _XTEAMR_DEF(double, d, SUFFIX, ATTR, BODY)                                  \
-  _XTEAMR_DEF(float, f, SUFFIX, ATTR, BODY)                                   \
-  _XTEAMR_DEF(int, i, SUFFIX, ATTR, BODY)                                     \
-  _XTEAMR_DEF(_UI, ui, SUFFIX, ATTR, BODY)                                    \
-  _XTEAMR_DEF(long, l, SUFFIX, ATTR, BODY)                                    \
-  _XTEAMR_DEF(_UL, ul, SUFFIX, ATTR, BODY)
+#define _XTEAMR_FUNC_ALL(SUFFIX, ATTR, BODY)                                   \
+  _XTEAMR_FUNC(double, d, SUFFIX, ATTR, BODY)                                  \
+  _XTEAMR_FUNC(float, f, SUFFIX, ATTR, BODY)                                   \
+  _XTEAMR_FUNC(int, i, SUFFIX, ATTR, BODY)                                     \
+  _XTEAMR_FUNC(_UI, ui, SUFFIX, ATTR, BODY)                                    \
+  _XTEAMR_FUNC(long, l, SUFFIX, ATTR, BODY)                                    \
+  _XTEAMR_FUNC(_UL, ul, SUFFIX, ATTR, BODY)
 
 // Scan: (v, storage, r_array, tvs, td, rf, rf_lds, iv, k, numteams)
-#define _XTEAMS_DEF(T, TS, SUFFIX, ATTR, BODY)                                \
-ATTR void __kmpc_xteams_##TS##SUFFIX(                                          \
-    T v, T *storage, T *r_array, T *tvs, uint32_t *td,                        \
-    void (*_rf)(T *, T),                                                       \
-    void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T iv,                    \
-    const uint64_t k, const uint32_t numteams) BODY
+#define _XTEAMS_FUNC(T, TS, SUFFIX, ATTR, BODY)                                \
+  ATTR void __kmpc_xteams_##TS##SUFFIX(                                        \
+      T v, T *storage, T *r_array, T *tvs, uint32_t *td, void (*_rf)(T *, T),  \
+      void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T iv, const uint64_t k, \
+      const uint32_t numteams) BODY
 
-#define _XTEAMS_DEF_ALL(SUFFIX, ATTR, BODY)                                   \
-  _XTEAMS_DEF(double, d, SUFFIX, ATTR, BODY)                                  \
-  _XTEAMS_DEF(float, f, SUFFIX, ATTR, BODY)                                   \
-  _XTEAMS_DEF(int, i, SUFFIX, ATTR, BODY)                                     \
-  _XTEAMS_DEF(_UI, ui, SUFFIX, ATTR, BODY)                                    \
-  _XTEAMS_DEF(long, l, SUFFIX, ATTR, BODY)                                    \
-  _XTEAMS_DEF(_UL, ul, SUFFIX, ATTR, BODY)
+#define _XTEAMS_FUNC_ALL(SUFFIX, ATTR, BODY)                                   \
+  _XTEAMS_FUNC(double, d, SUFFIX, ATTR, BODY)                                  \
+  _XTEAMS_FUNC(float, f, SUFFIX, ATTR, BODY)                                   \
+  _XTEAMS_FUNC(int, i, SUFFIX, ATTR, BODY)                                     \
+  _XTEAMS_FUNC(_UI, ui, SUFFIX, ATTR, BODY)                                    \
+  _XTEAMS_FUNC(long, l, SUFFIX, ATTR, BODY)                                    \
+  _XTEAMS_FUNC(_UL, ul, SUFFIX, ATTR, BODY)
 
 // Phase2 scan: (storage, segment_size, tvs, seg_vals, rf, rnv, k, is_inclusive)
-#define _XTEAMS_P2_DEF(T, TS, SUFFIX, ATTR, BODY)                             \
-ATTR void __kmpc_xteams_phase2_##TS##SUFFIX(                                   \
-    T *storage, int segment_size, T *tvs, T *seg_vals,                         \
-    void (*_rf)(T *, T), const T rnv,                                          \
-    const uint64_t k, bool is_inclusive_scan) BODY
+#define _XTEAMS_P2_FUNC(T, TS, SUFFIX, ATTR, BODY)                             \
+  ATTR void __kmpc_xteams_phase2_##TS##SUFFIX(                                 \
+      T *storage, int segment_size, T *tvs, T *seg_vals, void (*_rf)(T *, T),  \
+      const T rnv, const uint64_t k, bool is_inclusive_scan) BODY
 
-#define _XTEAMS_P2_DEF_ALL(SUFFIX, ATTR, BODY)                                \
-  _XTEAMS_P2_DEF(double, d, SUFFIX, ATTR, BODY)                               \
-  _XTEAMS_P2_DEF(float, f, SUFFIX, ATTR, BODY)                                \
-  _XTEAMS_P2_DEF(int, i, SUFFIX, ATTR, BODY)                                  \
-  _XTEAMS_P2_DEF(long, l, SUFFIX, ATTR, BODY)
+#define _XTEAMS_P2_FUNC_ALL(SUFFIX, ATTR, BODY)                                \
+  _XTEAMS_P2_FUNC(double, d, SUFFIX, ATTR, BODY)                               \
+  _XTEAMS_P2_FUNC(float, f, SUFFIX, ATTR, BODY)                                \
+  _XTEAMS_P2_FUNC(int, i, SUFFIX, ATTR, BODY)                                  \
+  _XTEAMS_P2_FUNC(long, l, SUFFIX, ATTR, BODY)
 
 // =========================================================================
 // Device declarations (resolved from device runtime bitcode)
@@ -79,71 +78,71 @@ ATTR void __kmpc_xteams_phase2_##TS##SUFFIX(                                   \
 
 extern "C" {
 // Reductions (with Scope) — only _16x64 and _32x32 exist in the runtime
-_XTEAMR_DEF_ALL(_16x64, _INLINE_ATTR_, ;)
-_XTEAMR_DEF_ALL(_32x32, _INLINE_ATTR_, ;)
+_XTEAMR_FUNC_ALL(_16x64, _INLINE_ATTR_, ;)
+_XTEAMR_FUNC_ALL(_32x32, _INLINE_ATTR_, ;)
 
 // Scans — AMD wavesize-64 variants
-_XTEAMS_DEF_ALL(_16x64, _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_8x64,  _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_4x64,  _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_2x64,  _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_1x64,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_16x64, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_8x64,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_4x64,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_2x64,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_1x64,  _INLINE_ATTR_, ;)
 
 // Scans — NVIDIA wavesize-32 variants
-_XTEAMS_DEF_ALL(_32x32, _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_16x32, _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_8x32,  _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_4x32,  _INLINE_ATTR_, ;)
-_XTEAMS_DEF_ALL(_2x32,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_32x32, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_16x32, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_8x32,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_4x32,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_2x32,  _INLINE_ATTR_, ;)
 
 // Phase2 scans — AMD wavesize-64 variants (d, f, i, l only)
-_XTEAMS_P2_DEF_ALL(_16x64, _INLINE_ATTR_, ;)
-_XTEAMS_P2_DEF_ALL(_8x64,  _INLINE_ATTR_, ;)
-_XTEAMS_P2_DEF_ALL(_4x64,  _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_16x64, _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_8x64,  _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_4x64,  _INLINE_ATTR_, ;)
 
 // Phase2 scans — NVIDIA wavesize-32 variants (d, f, i, l only)
-_XTEAMS_P2_DEF_ALL(_32x32, _INLINE_ATTR_, ;)
-_XTEAMS_P2_DEF_ALL(_16x32, _INLINE_ATTR_, ;)
-_XTEAMS_P2_DEF_ALL(_8x32,  _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_32x32, _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_16x32, _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_8x32,  _INLINE_ATTR_, ;)
 }
 
 #else
 
 // Host compilation: empty stubs so the host linker is satisfied.
 extern "C" {
-_XTEAMR_DEF_ALL(_16x64, , {})
-_XTEAMR_DEF_ALL(_32x32, , {})
+_XTEAMR_FUNC_ALL(_16x64, , {})
+_XTEAMR_FUNC_ALL(_32x32, , {})
 
-_XTEAMS_DEF_ALL(_16x64, , {})
-_XTEAMS_DEF_ALL(_8x64,  , {})
-_XTEAMS_DEF_ALL(_4x64,  , {})
-_XTEAMS_DEF_ALL(_2x64,  , {})
-_XTEAMS_DEF_ALL(_1x64,  , {})
+_XTEAMS_FUNC_ALL(_16x64, , {})
+_XTEAMS_FUNC_ALL(_8x64,  , {})
+_XTEAMS_FUNC_ALL(_4x64,  , {})
+_XTEAMS_FUNC_ALL(_2x64,  , {})
+_XTEAMS_FUNC_ALL(_1x64,  , {})
 
-_XTEAMS_DEF_ALL(_32x32, , {})
-_XTEAMS_DEF_ALL(_16x32, , {})
-_XTEAMS_DEF_ALL(_8x32,  , {})
-_XTEAMS_DEF_ALL(_4x32,  , {})
-_XTEAMS_DEF_ALL(_2x32,  , {})
+_XTEAMS_FUNC_ALL(_32x32, , {})
+_XTEAMS_FUNC_ALL(_16x32, , {})
+_XTEAMS_FUNC_ALL(_8x32,  , {})
+_XTEAMS_FUNC_ALL(_4x32,  , {})
+_XTEAMS_FUNC_ALL(_2x32,  , {})
 
-_XTEAMS_P2_DEF_ALL(_16x64, , {})
-_XTEAMS_P2_DEF_ALL(_8x64,  , {})
-_XTEAMS_P2_DEF_ALL(_4x64,  , {})
+_XTEAMS_P2_FUNC_ALL(_16x64, , {})
+_XTEAMS_P2_FUNC_ALL(_8x64,  , {})
+_XTEAMS_P2_FUNC_ALL(_4x64,  , {})
 
-_XTEAMS_P2_DEF_ALL(_32x32, , {})
-_XTEAMS_P2_DEF_ALL(_16x32, , {})
-_XTEAMS_P2_DEF_ALL(_8x32,  , {})
+_XTEAMS_P2_FUNC_ALL(_32x32, , {})
+_XTEAMS_P2_FUNC_ALL(_16x32, , {})
+_XTEAMS_P2_FUNC_ALL(_8x32,  , {})
 }
 
 #endif
 
 // Done with declaration macros
-#undef _XTEAMR_DEF
-#undef _XTEAMR_DEF_ALL
-#undef _XTEAMS_DEF
-#undef _XTEAMS_DEF_ALL
-#undef _XTEAMS_P2_DEF
-#undef _XTEAMS_P2_DEF_ALL
+#undef _XTEAMR_FUNC
+#undef _XTEAMR_FUNC_ALL
+#undef _XTEAMS_FUNC
+#undef _XTEAMS_FUNC_ALL
+#undef _XTEAMS_P2_FUNC
+#undef _XTEAMS_P2_FUNC_ALL
 
 // =========================================================================
 // API-specific helper functions — AOMP block-size-suffixed API

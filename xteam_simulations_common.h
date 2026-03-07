@@ -1,9 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
+#include <type_traits>
 #include <omp.h>
 
 // Common reduction/scan device state
@@ -19,86 +21,32 @@ template <typename T> T *d_team_vals = nullptr;
 #define _INLINE_ATTR_ __attribute__((flatten, always_inline))
 #define _RF_LDS volatile __attribute__((address_space(3)))
 
+#define _REDUCTION_FUNC(T, OP, TS, BODY)                                       \
+  void __kmpc_rfun_##OP##_##TS(T *val, T otherval) BODY;                       \
+  void __kmpc_rfun_##OP##_lds_##TS(_RF_LDS T *val, _RF_LDS T *otherval) BODY
+
+#define _REDUCTION_FUNC_ALL(OP, BODY)                                          \
+  _REDUCTION_FUNC(double, OP, d, BODY)                                         \
+  _REDUCTION_FUNC(float, OP, f, BODY)                                          \
+  _REDUCTION_FUNC(int, OP, i, BODY)                                            \
+  _REDUCTION_FUNC(_UI, OP, ui, BODY)                                           \
+  _REDUCTION_FUNC(long, OP, l, BODY)                                           \
+  _REDUCTION_FUNC(_UL, OP, ul, BODY)
+
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 
 extern "C" {
-void __kmpc_rfun_sum_d(double *val, double otherval);
-void __kmpc_rfun_sum_f(float *val, float otherval);
-void __kmpc_rfun_sum_i(int *val, int otherval);
-void __kmpc_rfun_sum_ui(_UI *val, _UI otherval);
-void __kmpc_rfun_sum_l(long *val, long otherval);
-void __kmpc_rfun_sum_ul(_UL *val, _UL otherval);
-void __kmpc_rfun_sum_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
-void __kmpc_rfun_sum_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
-void __kmpc_rfun_sum_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
-void __kmpc_rfun_sum_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
-void __kmpc_rfun_sum_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
-void __kmpc_rfun_sum_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
-void __kmpc_rfun_max_d(double *val, double otherval);
-void __kmpc_rfun_max_f(float *val, float otherval);
-void __kmpc_rfun_max_i(int *val, int otherval);
-void __kmpc_rfun_max_ui(_UI *val, _UI otherval);
-void __kmpc_rfun_max_l(long *val, long otherval);
-void __kmpc_rfun_max_ul(_UL *val, _UL otherval);
-void __kmpc_rfun_max_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
-void __kmpc_rfun_max_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
-void __kmpc_rfun_max_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
-void __kmpc_rfun_max_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
-void __kmpc_rfun_max_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
-void __kmpc_rfun_max_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
-void __kmpc_rfun_min_d(double *val, double otherval);
-void __kmpc_rfun_min_f(float *val, float otherval);
-void __kmpc_rfun_min_i(int *val, int otherval);
-void __kmpc_rfun_min_ui(_UI *val, _UI otherval);
-void __kmpc_rfun_min_l(long *val, long otherval);
-void __kmpc_rfun_min_ul(_UL *val, _UL otherval);
-void __kmpc_rfun_min_lds_d(_RF_LDS double *val, _RF_LDS double *otherval);
-void __kmpc_rfun_min_lds_f(_RF_LDS float *val, _RF_LDS float *otherval);
-void __kmpc_rfun_min_lds_i(_RF_LDS int *val, _RF_LDS int *otherval);
-void __kmpc_rfun_min_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval);
-void __kmpc_rfun_min_lds_l(_RF_LDS long *val, _RF_LDS long *otherval);
-void __kmpc_rfun_min_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval);
+_REDUCTION_FUNC_ALL(sum, ;)
+_REDUCTION_FUNC_ALL(max, ;)
+_REDUCTION_FUNC_ALL(min, ;)
 }
 
 #else
 
 extern "C" {
-void __kmpc_rfun_sum_d(double *val, double otherval) {}
-void __kmpc_rfun_sum_f(float *val, float otherval) {}
-void __kmpc_rfun_sum_i(int *val, int otherval) {}
-void __kmpc_rfun_sum_ui(_UI *val, _UI otherval) {}
-void __kmpc_rfun_sum_l(long *val, long otherval) {}
-void __kmpc_rfun_sum_ul(_UL *val, _UL otherval) {}
-void __kmpc_rfun_sum_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
-void __kmpc_rfun_sum_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
-void __kmpc_rfun_sum_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
-void __kmpc_rfun_sum_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
-void __kmpc_rfun_sum_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
-void __kmpc_rfun_sum_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
-void __kmpc_rfun_max_d(double *val, double otherval) {}
-void __kmpc_rfun_max_f(float *val, float otherval) {}
-void __kmpc_rfun_max_i(int *val, int otherval) {}
-void __kmpc_rfun_max_ui(_UI *val, _UI otherval) {}
-void __kmpc_rfun_max_l(long *val, long otherval) {}
-void __kmpc_rfun_max_ul(_UL *val, _UL otherval) {}
-void __kmpc_rfun_max_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
-void __kmpc_rfun_max_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
-void __kmpc_rfun_max_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
-void __kmpc_rfun_max_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
-void __kmpc_rfun_max_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
-void __kmpc_rfun_max_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
-void __kmpc_rfun_min_d(double *val, double otherval) {}
-void __kmpc_rfun_min_f(float *val, float otherval) {}
-void __kmpc_rfun_min_i(int *val, int otherval) {}
-void __kmpc_rfun_min_ui(_UI *val, _UI otherval) {}
-void __kmpc_rfun_min_l(long *val, long otherval) {}
-void __kmpc_rfun_min_ul(_UL *val, _UL otherval) {}
-void __kmpc_rfun_min_lds_d(_RF_LDS double *val, _RF_LDS double *otherval) {}
-void __kmpc_rfun_min_lds_f(_RF_LDS float *val, _RF_LDS float *otherval) {}
-void __kmpc_rfun_min_lds_i(_RF_LDS int *val, _RF_LDS int *otherval) {}
-void __kmpc_rfun_min_lds_ui(_RF_LDS _UI *val, _RF_LDS _UI *otherval) {}
-void __kmpc_rfun_min_lds_l(_RF_LDS long *val, _RF_LDS long *otherval) {}
-void __kmpc_rfun_min_lds_ul(_RF_LDS _UL *val, _RF_LDS _UL *otherval) {}
+_REDUCTION_FUNC_ALL(sum, {})
+_REDUCTION_FUNC_ALL(max, {})
+_REDUCTION_FUNC_ALL(min, {})
 }
 
 #endif
