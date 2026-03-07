@@ -260,8 +260,9 @@ template <typename T> xteams_phase2_fn_t<T> get_kmpc_xteams_phase2_func() {
   }
 }
 
-template <typename T> T reduce_sum_sim(const T *__restrict in, uint64_t n) {
-  const T rnv = T(0);
+template <typename T, ScanOp Op>
+T reduce_sim(const T *__restrict in, uint64_t n) {
+  const T rnv = scan_identity<T, Op>();
   T s = rnv;
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
@@ -270,47 +271,9 @@ template <typename T> T reduce_sum_sim(const T *__restrict in, uint64_t n) {
     auto xteamr_func = get_kmpc_xteamr_func<T>();
     T val = rnv;
     for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
-      val += in[i];
-    xteamr_func(val, &s, d_team_vals<T>, d_td, get_rfun_sum_func<T>(),
-                get_rfun_sum_lds_func<T>(), rnv, k, XTEAM_NUM_TEAMS,
-                _XTEAMR_SCOPE);
-  }
-
-  return s;
-}
-
-template <typename T> T reduce_max_sim(const T *__restrict in, uint64_t n) {
-  const T rnv = std::numeric_limits<T>::lowest();
-  T s = rnv;
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
-    is_device_ptr(d_team_vals<T>, d_td)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteamr_func = get_kmpc_xteamr_func<T>();
-    T val = rnv;
-    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
-      val = std::max(val, in[i]);
-    xteamr_func(val, &s, d_team_vals<T>, d_td, get_rfun_max_func<T>(),
-                get_rfun_max_lds_func<T>(), rnv, k, XTEAM_NUM_TEAMS,
-                _XTEAMR_SCOPE);
-  }
-
-  return s;
-}
-
-template <typename T> T reduce_min_sim(const T *__restrict in, uint64_t n) {
-  const T rnv = std::numeric_limits<T>::max();
-  T s = rnv;
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
-    is_device_ptr(d_team_vals<T>, d_td)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteamr_func = get_kmpc_xteamr_func<T>();
-    T val = rnv;
-    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
-      val = std::min(val, in[i]);
-    xteamr_func(val, &s, d_team_vals<T>, d_td, get_rfun_min_func<T>(),
-                get_rfun_min_lds_func<T>(), rnv, k, XTEAM_NUM_TEAMS,
+      val = scan_combine<T, Op>(val, in[i]);
+    xteamr_func(val, &s, d_team_vals<T>, d_td, get_rfun_func<T, Op>(),
+                get_rfun_lds_func<T, Op>(), rnv, k, XTEAM_NUM_TEAMS,
                 _XTEAMR_SCOPE);
   }
 
@@ -341,9 +304,9 @@ T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
 // GPU cross-team scan kernels (AOMP 2-kernel algorithm with phase2 API)
 // =========================================================================
 
-template <typename T>
-void scan_incl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
-  const T rnv = T(0);
+template <typename T, ScanOp Op>
+void scan_incl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = scan_identity<T, Op>();
   const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
 // K1: serial per-thread scan + cross-team coordination
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -353,12 +316,12 @@ void scan_incl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
     auto xteams_func = get_kmpc_xteams_func<T>();
     T val0 = rnv;
     for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
-      val0 += in[k * stride + i];
+      val0 = scan_combine<T, Op>(val0, in[k * stride + i]);
       out[k * stride + i] = val0;
     }
     d_storage<T>[k] = val0;
     xteams_func(val0, d_storage<T>, out, d_team_vals<T>, d_td,
-                get_rfun_sum_func<T>(), get_rfun_sum_lds_func<T>(), rnv, k,
+                get_rfun_func<T, Op>(), get_rfun_lds_func<T, Op>(), rnv, k,
                 XTEAM_NUM_TEAMS);
   }
 
@@ -369,13 +332,13 @@ void scan_incl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
     xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_sum_func<T>(), rnv, k, true);
+              get_rfun_func<T, Op>(), rnv, k, true);
   }
 }
 
-template <typename T>
-void scan_excl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
-  const T rnv = T(0);
+template <typename T, ScanOp Op>
+void scan_excl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
+  const T rnv = scan_identity<T, Op>();
   const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
 // K1: serial per-thread exclusive scan + cross-team coordination
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -386,11 +349,11 @@ void scan_excl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
     T val0 = rnv;
     for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
       out[k * stride + i] = val0;
-      val0 += in[k * stride + i];
+      val0 = scan_combine<T, Op>(val0, in[k * stride + i]);
     }
     d_storage<T>[k] = val0;
     xteams_func(val0, d_storage<T>, out, d_team_vals<T>, d_td,
-                get_rfun_sum_func<T>(), get_rfun_sum_lds_func<T>(), rnv, k,
+                get_rfun_func<T, Op>(), get_rfun_lds_func<T, Op>(), rnv, k,
                 XTEAM_NUM_TEAMS);
   }
 
@@ -401,135 +364,7 @@ void scan_excl_sum_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
     xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_sum_func<T>(), rnv, k, true);
-  }
-}
-
-template <typename T>
-void scan_incl_max_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
-  const T rnv = std::numeric_limits<T>::lowest();
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
-// K1: serial per-thread scan + cross-team coordination
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>, d_td)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_func = get_kmpc_xteams_func<T>();
-    T val0 = rnv;
-    for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
-      val0 = std::max(val0, in[k * stride + i]);
-      out[k * stride + i] = val0;
-    }
-    d_storage<T>[k] = val0;
-    xteams_func(val0, d_storage<T>, out, d_team_vals<T>, d_td,
-                get_rfun_max_func<T>(), get_rfun_max_lds_func<T>(), rnv, k,
-                XTEAM_NUM_TEAMS);
-  }
-
-// K2: redistribution via phase2 API
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_max_func<T>(), rnv, k, true);
-  }
-}
-
-template <typename T>
-void scan_excl_max_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
-  const T rnv = std::numeric_limits<T>::lowest();
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
-// K1: serial per-thread exclusive scan + cross-team coordination
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>, d_td)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_func = get_kmpc_xteams_func<T>();
-    T val0 = rnv;
-    for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
-      out[k * stride + i] = val0;
-      val0 = std::max(val0, in[k * stride + i]);
-    }
-    d_storage<T>[k] = val0;
-    xteams_func(val0, d_storage<T>, out, d_team_vals<T>, d_td,
-                get_rfun_max_func<T>(), get_rfun_max_lds_func<T>(), rnv, k,
-                XTEAM_NUM_TEAMS);
-  }
-
-// K2: redistribution via phase2 API
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_max_func<T>(), rnv, k, true);
-  }
-}
-
-template <typename T>
-void scan_incl_min_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
-  const T rnv = std::numeric_limits<T>::max();
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
-// K1: serial per-thread scan + cross-team coordination
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>, d_td)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_func = get_kmpc_xteams_func<T>();
-    T val0 = rnv;
-    for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
-      val0 = std::min(val0, in[k * stride + i]);
-      out[k * stride + i] = val0;
-    }
-    d_storage<T>[k] = val0;
-    xteams_func(val0, d_storage<T>, out, d_team_vals<T>, d_td,
-                get_rfun_min_func<T>(), get_rfun_min_lds_func<T>(), rnv, k,
-                XTEAM_NUM_TEAMS);
-  }
-
-// K2: redistribution via phase2 API
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_min_func<T>(), rnv, k, true);
-  }
-}
-
-template <typename T>
-void scan_excl_min_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
-  const T rnv = std::numeric_limits<T>::max();
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
-// K1: serial per-thread exclusive scan + cross-team coordination
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>, d_td)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_func = get_kmpc_xteams_func<T>();
-    T val0 = rnv;
-    for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
-      out[k * stride + i] = val0;
-      val0 = std::min(val0, in[k * stride + i]);
-    }
-    d_storage<T>[k] = val0;
-    xteams_func(val0, d_storage<T>, out, d_team_vals<T>, d_td,
-                get_rfun_min_func<T>(), get_rfun_min_lds_func<T>(), rnv, k,
-                XTEAM_NUM_TEAMS);
-  }
-
-// K2: redistribution via phase2 API
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_min_func<T>(), rnv, k, true);
+              get_rfun_func<T, Op>(), rnv, k, true);
   }
 }
 

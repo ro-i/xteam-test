@@ -296,15 +296,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     init_device_sim<T>();
 
     gold_val = gold_reduce_sum(in1, n);
-    r = run_bench_reduce<T, is_fp>(reduce_sum_sim<T>, gold_val, n, "red_sum_sim", in1);
+    r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Sum>, gold_val, n, "red_sum_sim", in1);
     print_result("red_sum_sim", type_name, n, r);
 
     gold_val = gold_reduce_max(in1, n);
-    r = run_bench_reduce<T, is_fp>(reduce_max_sim<T>, gold_val, n, "red_max_sim", in1);
+    r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Max>, gold_val, n, "red_max_sim", in1);
     print_result("red_max_sim", type_name, n, r);
 
     gold_val = gold_reduce_min(in1, n);
-    r = run_bench_reduce<T, is_fp>(reduce_min_sim<T>, gold_val, n, "red_min_sim", in1);
+    r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Min>, gold_val, n, "red_min_sim", in1);
     print_result("red_min_sim", type_name, n, r);
 
     gold_val = gold_reduce_dot(in1, in2, n);
@@ -362,103 +362,97 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     init_device_sim<T>();
 
     gold_inclusive_sum(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Sum>, out, gold, n,
                                  "incl_sum_sim", in1);
     print_result("incl_sum_sim", type_name, n, r);
     #ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim_v1<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Sum>, out, gold, n,
                                  "incl_sum_sim_v1", in1);
     print_result("incl_sum_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim_v2<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v2<T, ScanOp::Sum>, out, gold, n,
                                  "incl_sum_sim_v2", in1);
     print_result("incl_sum_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_sum_sim_v3<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v3<T, ScanOp::Sum>, out, gold, n,
                                  "incl_sum_sim_v3", in1);
     print_result("incl_sum_sim_v3", type_name, n, r);
-    {
-      void (*v4_fn)(const T *, T *, uint64_t) = scan_incl_sum_sim_v4;
-      r = run_bench_scan<T, is_fp>(v4_fn, out, gold, n, "incl_sum_sim_v4",
-                                   in1);
-      print_result("incl_sum_sim_v4", type_name, n, r);
-    }
     #endif
 
     gold_exclusive_sum(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Sum>, out, gold, n,
                                  "excl_sum_sim", in1);
     print_result("excl_sum_sim", type_name, n, r);
     #ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim_v1<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Sum>, out, gold, n,
                                  "excl_sum_sim_v1", in1);
     print_result("excl_sum_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim_v2<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v2<T, ScanOp::Sum>, out, gold, n,
                                  "excl_sum_sim_v2", in1);
     print_result("excl_sum_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_sum_sim_v3<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v3<T, ScanOp::Sum>, out, gold, n,
                                  "excl_sum_sim_v3", in1);
     print_result("excl_sum_sim_v3", type_name, n, r);
     #endif
 
     gold_inclusive_max(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_incl_max_sim<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Max>, out, gold, n,
                                  "incl_max_sim", in1);
     print_result("incl_max_sim", type_name, n, r);
     #ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_max_sim_v1<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Max>, out, gold, n,
                                  "incl_max_sim_v1", in1);
     print_result("incl_max_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_max_sim_v2<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v2<T, ScanOp::Max>, out, gold, n,
                                  "incl_max_sim_v2", in1);
     print_result("incl_max_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_max_sim_v3<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v3<T, ScanOp::Max>, out, gold, n,
                                  "incl_max_sim_v3", in1);
     print_result("incl_max_sim_v3", type_name, n, r);
     #endif
 
     gold_exclusive_max(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_max_sim<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Max>, out, gold, n,
                                  "excl_max_sim", in1);
     print_result("excl_max_sim", type_name, n, r);
     #ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_max_sim_v1<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Max>, out, gold, n,
                                  "excl_max_sim_v1", in1);
     print_result("excl_max_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_max_sim_v2<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v2<T, ScanOp::Max>, out, gold, n,
                                  "excl_max_sim_v2", in1);
     print_result("excl_max_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_max_sim_v3<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v3<T, ScanOp::Max>, out, gold, n,
                                  "excl_max_sim_v3", in1);
     print_result("excl_max_sim_v3", type_name, n, r);
     #endif
 
     gold_inclusive_min(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_incl_min_sim<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Min>, out, gold, n,
                                  "incl_min_sim", in1);
     print_result("incl_min_sim", type_name, n, r);
     #ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_min_sim_v1<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Min>, out, gold, n,
                                  "incl_min_sim_v1", in1);
     print_result("incl_min_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_min_sim_v2<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v2<T, ScanOp::Min>, out, gold, n,
                                  "incl_min_sim_v2", in1);
     print_result("incl_min_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_incl_min_sim_v3<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_incl_sim_v3<T, ScanOp::Min>, out, gold, n,
                                  "incl_min_sim_v3", in1);
     print_result("incl_min_sim_v3", type_name, n, r);
     #endif
 
     gold_exclusive_min(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_min_sim<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Min>, out, gold, n,
                                  "excl_min_sim", in1);
     print_result("excl_min_sim", type_name, n, r);
     #ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_min_sim_v1<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Min>, out, gold, n,
                                  "excl_min_sim_v1", in1);
     print_result("excl_min_sim_v1", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_min_sim_v2<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v2<T, ScanOp::Min>, out, gold, n,
                                  "excl_min_sim_v2", in1);
     print_result("excl_min_sim_v2", type_name, n, r);
-    r = run_bench_scan<T, is_fp>(scan_excl_min_sim_v3<T>, out, gold, n,
+    r = run_bench_scan<T, is_fp>(scan_excl_sim_v3<T, ScanOp::Min>, out, gold, n,
                                  "excl_min_sim_v3", in1);
     print_result("excl_min_sim_v3", type_name, n, r);
     #endif

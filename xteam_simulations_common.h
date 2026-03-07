@@ -219,3 +219,49 @@ constexpr void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
     static_assert(false, "Unsupported type");
   }
 }
+
+// =========================================================================
+// ScanOp-generic helpers
+// =========================================================================
+
+enum class ScanOp { Sum, Max, Min };
+
+template <typename T, ScanOp Op>
+constexpr T scan_identity() {
+  if constexpr (Op == ScanOp::Sum)
+    return T(0);
+  else if constexpr (Op == ScanOp::Max)
+    return std::numeric_limits<T>::lowest();
+  else
+    return std::numeric_limits<T>::max();
+}
+
+template <typename T, ScanOp Op>
+constexpr T scan_combine(T a, T b) {
+  if constexpr (Op == ScanOp::Sum)
+    return a + b;
+  else if constexpr (Op == ScanOp::Max)
+    return std::max(a, b);
+  else
+    return std::min(a, b);
+}
+
+template <typename T, ScanOp Op>
+constexpr void (*get_rfun_func())(T *, T) {
+  if constexpr (Op == ScanOp::Sum)
+    return get_rfun_sum_func<T>();
+  else if constexpr (Op == ScanOp::Max)
+    return get_rfun_max_func<T>();
+  else
+    return get_rfun_min_func<T>();
+}
+
+template <typename T, ScanOp Op>
+constexpr void (*get_rfun_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+  if constexpr (Op == ScanOp::Sum)
+    return get_rfun_sum_lds_func<T>();
+  else if constexpr (Op == ScanOp::Max)
+    return get_rfun_max_lds_func<T>();
+  else
+    return get_rfun_min_lds_func<T>();
+}
