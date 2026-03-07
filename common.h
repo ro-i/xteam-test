@@ -37,7 +37,7 @@
 #endif
 // If true, let codegen for reduction/scan determine num_teams and num_threads.
 #ifndef CODEGEN_AUTODETECTION
-#define CODEGEN_AUTODETECTION 1
+#define CODEGEN_AUTODETECTION 0
 #endif
 
 // default alignment for aligned_alloc
