@@ -113,8 +113,7 @@ quick-hip:
 	$(MAKE) QUICK_RUN=1 ROUNDS=$(ROUNDS) WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS=$(BENCH_ITERS) hip
 
 clean:
-	rm -f $(BINARIES) xteam_bench_hip
-	rm -rf $(RESULTS_DIR)
+	rm -f $(BINARIES) xteam_bench_hip *.bc *.hipi *.hipfb *.ii *.img *.ll *.o *.out *.resolution.txt *.s
 
 help:
 	@echo "xteam benchmark"

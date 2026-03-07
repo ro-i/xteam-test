@@ -1,4 +1,5 @@
 results/
+r[0-9]*/
 local.mk
 xteam_bench_*
 *.bc
