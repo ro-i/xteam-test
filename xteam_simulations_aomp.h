@@ -472,6 +472,8 @@ template <typename T> void init_device_sim() {
       omp_target_alloc(sizeof(T) * (2 * XTEAM_TOTAL_NUM_THREADS + 1), devid));
 }
 
+template <typename T> void reset_device_sim() {}
+
 template <typename T> void free_device_sim() {
   assert(d_td != nullptr);
   int devid = 0;

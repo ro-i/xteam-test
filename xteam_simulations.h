@@ -442,6 +442,13 @@ template <typename T> void init_device_sim() {
                     devid);
 }
 
+template <typename T> void reset_device_sim() {
+  assert(d_status != nullptr);
+  int devid = 0;
+  omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
+                    devid);
+}
+
 template <typename T> void free_device_sim() {
   assert(d_status != nullptr && d_td != nullptr);
   int devid = 0;

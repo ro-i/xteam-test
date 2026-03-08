@@ -212,9 +212,11 @@ void scan_excl_dot(const T *__restrict a, const T *__restrict b,
 template <typename T, bool is_fp, typename Kernel, typename... Inputs>
 std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
                                            uint64_t n, const char *label,
-                                           Inputs... inputs) {
+                                           bool is_sim, Inputs... inputs) {
   std::vector<double> times(BENCH_ITERS_SCAN);
   for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS_SCAN; t++) {
+    if (is_sim)
+      reset_device_sim<T>();
     auto t1 = Clock::now();
     kernel(inputs..., out, n);
     auto t2 = Clock::now();
@@ -322,42 +324,42 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     // Cross-team scans (codegen; AOMP lacks inscan)
     gold_inclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_sum<T>, out, gold, n, "incl_sum",
-                                 in1);
+                                 false, in1);
     print_result("incl_sum", type_name, n, r);
 
     gold_exclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_sum<T>, out, gold, n, "excl_sum",
-                                 in1);
+                                 false, in1);
     print_result("excl_sum", type_name, n, r);
 
     gold_inclusive_max(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_max<T>, out, gold, n, "incl_max",
-                                 in1);
+                                 false, in1);
     print_result("incl_max", type_name, n, r);
 
     gold_exclusive_max(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_max<T>, out, gold, n, "excl_max",
-                                 in1);
+                                 false, in1);
     print_result("excl_max", type_name, n, r);
 
     gold_inclusive_min(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_min<T>, out, gold, n, "incl_min",
-                                 in1);
+                                 false, in1);
     print_result("incl_min", type_name, n, r);
 
     gold_exclusive_min(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_min<T>, out, gold, n, "excl_min",
-                                 in1);
+                                 false, in1);
     print_result("excl_min", type_name, n, r);
 
     gold_inclusive_dot(in1, in2, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_dot<T>, out, gold, n, "incl_dot",
-                                 in1, in2);
+                                 false, in1, in2);
     print_result("incl_dot", type_name, n, r);
 
     gold_exclusive_dot(in1, in2, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
-                                 in1, in2);
+                                 false, in1, in2);
     print_result("excl_dot", type_name, n, r);
 #endif // !defined(AOMP) && SCAN_TEST
 
@@ -367,81 +369,81 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
     gold_inclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Sum>, out, gold, n,
-                                 "incl_sum_sim", in1);
+                                 "incl_sum_sim", true, in1);
     print_result("incl_sum_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Sum>, out, gold, n,
-                                 "incl_sum_sim_v1", in1);
+                                 "incl_sum_sim_v1", true, in1);
     print_result("incl_sum_sim_v1", type_name, n, r);
 #endif
 
     gold_exclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Sum>, out, gold, n,
-                                 "excl_sum_sim", in1);
+                                 "excl_sum_sim", true, in1);
     print_result("excl_sum_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Sum>, out, gold, n,
-                                 "excl_sum_sim_v1", in1);
+                                 "excl_sum_sim_v1", true, in1);
     print_result("excl_sum_sim_v1", type_name, n, r);
 #endif
 
     gold_inclusive_max(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Max>, out, gold, n,
-                                 "incl_max_sim", in1);
+                                 "incl_max_sim", true, in1);
     print_result("incl_max_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Max>, out, gold, n,
-                                 "incl_max_sim_v1", in1);
+                                 "incl_max_sim_v1", true, in1);
     print_result("incl_max_sim_v1", type_name, n, r);
 #endif
 
     gold_exclusive_max(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Max>, out, gold, n,
-                                 "excl_max_sim", in1);
+                                 "excl_max_sim", true, in1);
     print_result("excl_max_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Max>, out, gold, n,
-                                 "excl_max_sim_v1", in1);
+                                 "excl_max_sim_v1", true, in1);
     print_result("excl_max_sim_v1", type_name, n, r);
 #endif
 
     gold_inclusive_min(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Min>, out, gold, n,
-                                 "incl_min_sim", in1);
+                                 "incl_min_sim", true, in1);
     print_result("incl_min_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Min>, out, gold, n,
-                                 "incl_min_sim_v1", in1);
+                                 "incl_min_sim_v1", true, in1);
     print_result("incl_min_sim_v1", type_name, n, r);
 #endif
 
     gold_exclusive_min(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Min>, out, gold, n,
-                                 "excl_min_sim", in1);
+                                 "excl_min_sim", true, in1);
     print_result("excl_min_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Min>, out, gold, n,
-                                 "excl_min_sim_v1", in1);
+                                 "excl_min_sim_v1", true, in1);
     print_result("excl_min_sim_v1", type_name, n, r);
 #endif
 
     gold_inclusive_dot(in1, in2, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_dot_sim<T>, out, gold, n,
-                                 "incl_dot_sim", in1, in2);
+                                 "incl_dot_sim", true, in1, in2);
     print_result("incl_dot_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v1<T>, out, gold, n,
-                                 "incl_dot_sim_v1", in1, in2);
+                                 "incl_dot_sim_v1", true, in1, in2);
     print_result("incl_dot_sim_v1", type_name, n, r);
 #endif
 
     gold_exclusive_dot(in1, in2, gold, n);
     r = run_bench_scan<T, is_fp>(scan_excl_dot_sim<T>, out, gold, n,
-                                 "excl_dot_sim", in1, in2);
+                                 "excl_dot_sim", true, in1, in2);
     print_result("excl_dot_sim", type_name, n, r);
 #ifndef AOMP
     r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v1<T>, out, gold, n,
-                                 "excl_dot_sim_v1", in1, in2);
+                                 "excl_dot_sim_v1", true, in1, in2);
     print_result("excl_dot_sim_v1", type_name, n, r);
 #endif
 
