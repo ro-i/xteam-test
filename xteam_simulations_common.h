@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
-#include <type_traits>
 #include <omp.h>
+#include <type_traits>
 
 // Common reduction/scan device state
 uint32_t *d_td = nullptr;
@@ -172,8 +172,7 @@ constexpr void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
 
 enum class ScanOp { Sum, Max, Min };
 
-template <typename T, ScanOp Op>
-constexpr T scan_identity() {
+template <typename T, ScanOp Op> constexpr T scan_identity() {
   if constexpr (Op == ScanOp::Sum)
     return T(0);
   else if constexpr (Op == ScanOp::Max)
@@ -182,8 +181,7 @@ constexpr T scan_identity() {
     return std::numeric_limits<T>::max();
 }
 
-template <typename T, ScanOp Op>
-constexpr T scan_combine(T a, T b) {
+template <typename T, ScanOp Op> constexpr T scan_combine(T a, T b) {
   if constexpr (Op == ScanOp::Sum)
     return a + b;
   else if constexpr (Op == ScanOp::Max)
@@ -192,8 +190,7 @@ constexpr T scan_combine(T a, T b) {
     return std::min(a, b);
 }
 
-template <typename T, ScanOp Op>
-constexpr void (*get_rfun_func())(T *, T) {
+template <typename T, ScanOp Op> constexpr void (*get_rfun_func())(T *, T) {
   if constexpr (Op == ScanOp::Sum)
     return get_rfun_sum_func<T>();
   else if constexpr (Op == ScanOp::Max)

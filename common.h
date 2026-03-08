@@ -50,9 +50,8 @@
 // Represents the total of threads in the Grid
 #define XTEAM_TOTAL_NUM_THREADS (XTEAM_NUM_TEAMS * XTEAM_NUM_THREADS)
 
-template <typename T>
-T *alloc(uint64_t n) {
-  T* ret = static_cast<T *>(aligned_alloc(ALIGNMENT, sizeof(T) * n));
+template <typename T> T *alloc(uint64_t n) {
+  T *ret = static_cast<T *>(aligned_alloc(ALIGNMENT, sizeof(T) * n));
   if (!ret) {
     std::cerr << std::format("aligned_alloc failed n={}\n", n);
     exit(EXIT_FAILURE);

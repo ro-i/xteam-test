@@ -1,7 +1,7 @@
 #pragma once
 
-#include "xteam_simulations_common.h"
 #include "common.h"
+#include "xteam_simulations_common.h"
 
 // Scan simulation device state (old 2-kernel algorithm)
 template <typename T> T *d_storage = nullptr;
@@ -83,27 +83,27 @@ _XTEAMR_FUNC_ALL(_32x32, _INLINE_ATTR_, ;)
 
 // Scans — AMD wavesize-64 variants
 _XTEAMS_FUNC_ALL(_16x64, _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_8x64,  _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_4x64,  _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_2x64,  _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_1x64,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_8x64, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_4x64, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_2x64, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_1x64, _INLINE_ATTR_, ;)
 
 // Scans — NVIDIA wavesize-32 variants
 _XTEAMS_FUNC_ALL(_32x32, _INLINE_ATTR_, ;)
 _XTEAMS_FUNC_ALL(_16x32, _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_8x32,  _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_4x32,  _INLINE_ATTR_, ;)
-_XTEAMS_FUNC_ALL(_2x32,  _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_8x32, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_4x32, _INLINE_ATTR_, ;)
+_XTEAMS_FUNC_ALL(_2x32, _INLINE_ATTR_, ;)
 
 // Phase2 scans — AMD wavesize-64 variants (d, f, i, l only)
 _XTEAMS_P2_FUNC_ALL(_16x64, _INLINE_ATTR_, ;)
-_XTEAMS_P2_FUNC_ALL(_8x64,  _INLINE_ATTR_, ;)
-_XTEAMS_P2_FUNC_ALL(_4x64,  _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_8x64, _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_4x64, _INLINE_ATTR_, ;)
 
 // Phase2 scans — NVIDIA wavesize-32 variants (d, f, i, l only)
 _XTEAMS_P2_FUNC_ALL(_32x32, _INLINE_ATTR_, ;)
 _XTEAMS_P2_FUNC_ALL(_16x32, _INLINE_ATTR_, ;)
-_XTEAMS_P2_FUNC_ALL(_8x32,  _INLINE_ATTR_, ;)
+_XTEAMS_P2_FUNC_ALL(_8x32, _INLINE_ATTR_, ;)
 }
 
 #else
@@ -114,24 +114,24 @@ _XTEAMR_FUNC_ALL(_16x64, , {})
 _XTEAMR_FUNC_ALL(_32x32, , {})
 
 _XTEAMS_FUNC_ALL(_16x64, , {})
-_XTEAMS_FUNC_ALL(_8x64,  , {})
-_XTEAMS_FUNC_ALL(_4x64,  , {})
-_XTEAMS_FUNC_ALL(_2x64,  , {})
-_XTEAMS_FUNC_ALL(_1x64,  , {})
+_XTEAMS_FUNC_ALL(_8x64, , {})
+_XTEAMS_FUNC_ALL(_4x64, , {})
+_XTEAMS_FUNC_ALL(_2x64, , {})
+_XTEAMS_FUNC_ALL(_1x64, , {})
 
 _XTEAMS_FUNC_ALL(_32x32, , {})
 _XTEAMS_FUNC_ALL(_16x32, , {})
-_XTEAMS_FUNC_ALL(_8x32,  , {})
-_XTEAMS_FUNC_ALL(_4x32,  , {})
-_XTEAMS_FUNC_ALL(_2x32,  , {})
+_XTEAMS_FUNC_ALL(_8x32, , {})
+_XTEAMS_FUNC_ALL(_4x32, , {})
+_XTEAMS_FUNC_ALL(_2x32, , {})
 
 _XTEAMS_P2_FUNC_ALL(_16x64, , {})
-_XTEAMS_P2_FUNC_ALL(_8x64,  , {})
-_XTEAMS_P2_FUNC_ALL(_4x64,  , {})
+_XTEAMS_P2_FUNC_ALL(_8x64, , {})
+_XTEAMS_P2_FUNC_ALL(_4x64, , {})
 
 _XTEAMS_P2_FUNC_ALL(_32x32, , {})
 _XTEAMS_P2_FUNC_ALL(_16x32, , {})
-_XTEAMS_P2_FUNC_ALL(_8x32,  , {})
+_XTEAMS_P2_FUNC_ALL(_8x32, , {})
 }
 
 #endif
@@ -151,14 +151,14 @@ _XTEAMS_P2_FUNC_ALL(_8x32,  , {})
 // Reduction type: same signature as new dev API (includes Scope)
 template <typename T>
 using xteamr_fn_t = void (*)(T, T *, T *, uint32_t *, void (*)(T *, T),
-                              void (*)(_RF_LDS T *, _RF_LDS T *), const T,
-                              const uint64_t, const uint32_t, int);
+                             void (*)(_RF_LDS T *, _RF_LDS T *), const T,
+                             const uint64_t, const uint32_t, int);
 
 // Scan type: old 2-kernel signature (no Scope)
 template <typename T>
 using xteams_fn_t = void (*)(T, T *, T *, T *, uint32_t *, void (*)(T *, T),
-                              void (*)(_RF_LDS T *, _RF_LDS T *), const T,
-                              const uint64_t, const uint32_t);
+                             void (*)(_RF_LDS T *, _RF_LDS T *), const T,
+                             const uint64_t, const uint32_t);
 
 // Phase2 scan type (d, f, i, l only on amd-staging)
 template <typename T>
@@ -168,29 +168,48 @@ using xteams_phase2_fn_t = void (*)(T *, int, T *, T *, void (*)(T *, T),
 // --- getter helper macros ------------------------------------------------
 
 #define _XTEAMR_GETTER_BODY(SUFFIX)                                            \
-  if constexpr (std::is_same_v<T, double>)       return __kmpc_xteamr_d##SUFFIX; \
-  else if constexpr (std::is_same_v<T, float>)   return __kmpc_xteamr_f##SUFFIX; \
-  else if constexpr (std::is_same_v<T, int>)     return __kmpc_xteamr_i##SUFFIX; \
-  else if constexpr (std::is_same_v<T, unsigned int>)  return __kmpc_xteamr_ui##SUFFIX; \
-  else if constexpr (std::is_same_v<T, long>)    return __kmpc_xteamr_l##SUFFIX; \
-  else if constexpr (std::is_same_v<T, unsigned long>) return __kmpc_xteamr_ul##SUFFIX; \
-  else static_assert(false, "Unsupported type");
+  if constexpr (std::is_same_v<T, double>)                                     \
+    return __kmpc_xteamr_d##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, float>)                                 \
+    return __kmpc_xteamr_f##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, int>)                                   \
+    return __kmpc_xteamr_i##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, unsigned int>)                          \
+    return __kmpc_xteamr_ui##SUFFIX;                                           \
+  else if constexpr (std::is_same_v<T, long>)                                  \
+    return __kmpc_xteamr_l##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, unsigned long>)                         \
+    return __kmpc_xteamr_ul##SUFFIX;                                           \
+  else                                                                         \
+    static_assert(false, "Unsupported type");
 
 #define _XTEAMS_GETTER_BODY(SUFFIX)                                            \
-  if constexpr (std::is_same_v<T, double>)       return __kmpc_xteams_d##SUFFIX; \
-  else if constexpr (std::is_same_v<T, float>)   return __kmpc_xteams_f##SUFFIX; \
-  else if constexpr (std::is_same_v<T, int>)     return __kmpc_xteams_i##SUFFIX; \
-  else if constexpr (std::is_same_v<T, unsigned int>)  return __kmpc_xteams_ui##SUFFIX; \
-  else if constexpr (std::is_same_v<T, long>)    return __kmpc_xteams_l##SUFFIX; \
-  else if constexpr (std::is_same_v<T, unsigned long>) return __kmpc_xteams_ul##SUFFIX; \
-  else static_assert(false, "Unsupported type");
+  if constexpr (std::is_same_v<T, double>)                                     \
+    return __kmpc_xteams_d##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, float>)                                 \
+    return __kmpc_xteams_f##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, int>)                                   \
+    return __kmpc_xteams_i##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, unsigned int>)                          \
+    return __kmpc_xteams_ui##SUFFIX;                                           \
+  else if constexpr (std::is_same_v<T, long>)                                  \
+    return __kmpc_xteams_l##SUFFIX;                                            \
+  else if constexpr (std::is_same_v<T, unsigned long>)                         \
+    return __kmpc_xteams_ul##SUFFIX;                                           \
+  else                                                                         \
+    static_assert(false, "Unsupported type");
 
 #define _XTEAMS_P2_GETTER_BODY(SUFFIX)                                         \
-  if constexpr (std::is_same_v<T, double>)       return __kmpc_xteams_phase2_d##SUFFIX; \
-  else if constexpr (std::is_same_v<T, float>)   return __kmpc_xteams_phase2_f##SUFFIX; \
-  else if constexpr (std::is_same_v<T, int>)     return __kmpc_xteams_phase2_i##SUFFIX; \
-  else if constexpr (std::is_same_v<T, long>)    return __kmpc_xteams_phase2_l##SUFFIX; \
-  else static_assert(false, "Phase2: unsupported type (only d/f/i/l)");
+  if constexpr (std::is_same_v<T, double>)                                     \
+    return __kmpc_xteams_phase2_d##SUFFIX;                                     \
+  else if constexpr (std::is_same_v<T, float>)                                 \
+    return __kmpc_xteams_phase2_f##SUFFIX;                                     \
+  else if constexpr (std::is_same_v<T, int>)                                   \
+    return __kmpc_xteams_phase2_i##SUFFIX;                                     \
+  else if constexpr (std::is_same_v<T, long>)                                  \
+    return __kmpc_xteams_phase2_l##SUFFIX;                                     \
+  else                                                                         \
+    static_assert(false, "Phase2: unsupported type (only d/f/i/l)");
 
 // Reduction getter — only _16x64 (wave64) and _32x32 (wave32) exist
 template <typename T> xteamr_fn_t<T> get_kmpc_xteamr_func() {
@@ -264,7 +283,7 @@ T reduce_sim(const T *__restrict in, uint64_t n) {
   const T rnv = scan_identity<T, Op>();
   T s = rnv;
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom : s)                             \
     is_device_ptr(d_team_vals<T>, d_td)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteamr_func = get_kmpc_xteamr_func<T>();
@@ -284,7 +303,7 @@ T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
   const T rnv = T(0);
   T s = rnv;
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom:s)                               \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom : s)                             \
     is_device_ptr(d_team_vals<T>, d_td)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteamr_func = get_kmpc_xteamr_func<T>();
@@ -306,7 +325,8 @@ T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
 template <typename T, ScanOp Op>
 void scan_incl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
   const T rnv = scan_identity<T, Op>();
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
+  const uint64_t stride =
+      (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
 // K1: serial per-thread scan + cross-team coordination
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS)                                             \
@@ -326,8 +346,7 @@ void scan_incl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 // K2: redistribution via phase2 API
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
     xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
@@ -338,7 +357,8 @@ void scan_incl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T, ScanOp Op>
 void scan_excl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
   const T rnv = scan_identity<T, Op>();
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
+  const uint64_t stride =
+      (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
 // K1: serial per-thread exclusive scan + cross-team coordination
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS)                                             \
@@ -358,8 +378,7 @@ void scan_excl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 // K2: redistribution via phase2 API
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
     xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
@@ -371,7 +390,8 @@ template <typename T>
 void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
                        T *__restrict out, uint64_t n) {
   const T rnv = T(0);
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
+  const uint64_t stride =
+      (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
 // K1: serial per-thread scan + cross-team coordination
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS)                                             \
@@ -391,8 +411,7 @@ void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
 
 // K2: redistribution via phase2 API
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
     xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
@@ -404,7 +423,8 @@ template <typename T>
 void scan_excl_dot_sim(const T *__restrict a, const T *__restrict b,
                        T *__restrict out, uint64_t n) {
   const T rnv = T(0);
-  const uint64_t stride = (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
+  const uint64_t stride =
+      (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
 // K1: serial per-thread exclusive scan + cross-team coordination
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS)                                             \
@@ -424,8 +444,7 @@ void scan_excl_dot_sim(const T *__restrict a, const T *__restrict b,
 
 // K2: redistribution via phase2 API
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS)                                             \
-    is_device_ptr(d_storage<T>, d_team_vals<T>)
+    num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
     auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
     xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
@@ -449,8 +468,8 @@ template <typename T> void init_device_sim() {
   omp_target_memcpy(d_td, &zero, sizeof(uint32_t), 0, 0, devid,
                     omp_get_initial_device());
 
-  d_storage<T> = static_cast<T *>(omp_target_alloc(
-      sizeof(T) * (2 * XTEAM_TOTAL_NUM_THREADS + 1), devid));
+  d_storage<T> = static_cast<T *>(
+      omp_target_alloc(sizeof(T) * (2 * XTEAM_TOTAL_NUM_THREADS + 1), devid));
 }
 
 template <typename T> void free_device_sim() {
