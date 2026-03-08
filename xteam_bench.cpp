@@ -263,111 +263,81 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
     T *out = alloc<T>(n);
-    T *gold = alloc<T>(n);
     init_data<T, is_fp>(in1, in2, n);
     std::optional<TimingResult> r;
 
-#pragma omp target enter data map(to : in1[0 : n], in2[0 : n], out[0 : n],     \
-                                      gold[0 : n])
+#pragma omp target enter data map(to : in1[0 : n], in2[0 : n], out[0 : n])
 
-    // Cross-team reductions
+    // Cross-team reductions (codegen + simulations)
     T gold_val;
-#if REDUCTION_TEST
-    // Cross-team reductions (codegen)
-
-    gold_val = gold_reduce_sum(in1, n);
-    r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_val, n, "red_sum", in1);
-    print_result("red_sum", type_name, n, r);
-
-    gold_val = gold_reduce_max(in1, n);
-    r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold_val, n, "red_max", in1);
-    print_result("red_max", type_name, n, r);
-
-    gold_val = gold_reduce_min(in1, n);
-    r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold_val, n, "red_min", in1);
-    print_result("red_min", type_name, n, r);
-
-    gold_val = gold_reduce_dot(in1, in2, n);
-    r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_val, n, "red_dot", in1,
-                                   in2);
-    print_result("red_dot", type_name, n, r);
-#endif // REDUCTION_TEST
+    T *gold = static_cast<T *>(malloc(sizeof(T) * n));
 
 #if REDUCTION_SIMULATION
-    // Cross-team reductions (simulation)
     init_device_sim<T>();
+#endif
 
     gold_val = gold_reduce_sum(in1, n);
+#if REDUCTION_TEST
+    r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_val, n, "red_sum", in1);
+    print_result("red_sum", type_name, n, r);
+#endif
+#if REDUCTION_SIMULATION
     r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Sum>, gold_val, n,
                                    "red_sum_sim", in1);
     print_result("red_sum_sim", type_name, n, r);
+#endif
 
     gold_val = gold_reduce_max(in1, n);
+#if REDUCTION_TEST
+    r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold_val, n, "red_max", in1);
+    print_result("red_max", type_name, n, r);
+#endif
+#if REDUCTION_SIMULATION
     r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Max>, gold_val, n,
                                    "red_max_sim", in1);
     print_result("red_max_sim", type_name, n, r);
+#endif
 
     gold_val = gold_reduce_min(in1, n);
+#if REDUCTION_TEST
+    r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold_val, n, "red_min", in1);
+    print_result("red_min", type_name, n, r);
+#endif
+#if REDUCTION_SIMULATION
     r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Min>, gold_val, n,
                                    "red_min_sim", in1);
     print_result("red_min_sim", type_name, n, r);
+#endif
 
     gold_val = gold_reduce_dot(in1, in2, n);
+#if REDUCTION_TEST
+    r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_val, n, "red_dot", in1,
+                                   in2);
+    print_result("red_dot", type_name, n, r);
+#endif
+#if REDUCTION_SIMULATION
     r = run_bench_reduce<T, is_fp>(reduce_dot_sim<T>, gold_val, n,
                                    "red_dot_sim", in1, in2);
     print_result("red_dot_sim", type_name, n, r);
+#endif
 
+#if REDUCTION_SIMULATION
     free_device_sim<T>();
-#endif // REDUCTION_SIMULATION
+#endif
 
-#if !defined(AOMP) && SCAN_TEST
-    // Cross-team scans (codegen; AOMP lacks inscan)
+    // Cross-team scans (codegen + simulations)
+
+#if SCAN_SIMULATION
+    init_device_sim<T>();
+#endif
+
     gold_inclusive_sum(in1, gold, n);
+#if !defined(AOMP) && SCAN_TEST
     r = run_bench_scan<T, is_fp>(scan_incl_sum<T>, out, gold, n, "incl_sum",
                                  false, in1);
     print_result("incl_sum", type_name, n, r);
-
-    gold_exclusive_sum(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_sum<T>, out, gold, n, "excl_sum",
-                                 false, in1);
-    print_result("excl_sum", type_name, n, r);
-
-    gold_inclusive_max(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_incl_max<T>, out, gold, n, "incl_max",
-                                 false, in1);
-    print_result("incl_max", type_name, n, r);
-
-    gold_exclusive_max(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_max<T>, out, gold, n, "excl_max",
-                                 false, in1);
-    print_result("excl_max", type_name, n, r);
-
-    gold_inclusive_min(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_incl_min<T>, out, gold, n, "incl_min",
-                                 false, in1);
-    print_result("incl_min", type_name, n, r);
-
-    gold_exclusive_min(in1, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_min<T>, out, gold, n, "excl_min",
-                                 false, in1);
-    print_result("excl_min", type_name, n, r);
-
-    gold_inclusive_dot(in1, in2, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_incl_dot<T>, out, gold, n, "incl_dot",
-                                 false, in1, in2);
-    print_result("incl_dot", type_name, n, r);
-
-    gold_exclusive_dot(in1, in2, gold, n);
-    r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
-                                 false, in1, in2);
-    print_result("excl_dot", type_name, n, r);
-#endif // !defined(AOMP) && SCAN_TEST
-
+#endif
 #if SCAN_SIMULATION
-    // Cross-team scans (simulation)
-    init_device_sim<T>();
-
-    gold_inclusive_sum(in1, gold, n);
     r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Sum>, out, gold, n,
                                  "incl_sum_sim", true, in1);
     print_result("incl_sum_sim", type_name, n, r);
@@ -376,8 +346,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "incl_sum_sim_v1", true, in1);
     print_result("incl_sum_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_exclusive_sum(in1, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_excl_sum<T>, out, gold, n, "excl_sum",
+                                 false, in1);
+    print_result("excl_sum", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Sum>, out, gold, n,
                                  "excl_sum_sim", true, in1);
     print_result("excl_sum_sim", type_name, n, r);
@@ -386,8 +363,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "excl_sum_sim_v1", true, in1);
     print_result("excl_sum_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_inclusive_max(in1, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_incl_max<T>, out, gold, n, "incl_max",
+                                 false, in1);
+    print_result("incl_max", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Max>, out, gold, n,
                                  "incl_max_sim", true, in1);
     print_result("incl_max_sim", type_name, n, r);
@@ -396,8 +380,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "incl_max_sim_v1", true, in1);
     print_result("incl_max_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_exclusive_max(in1, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_excl_max<T>, out, gold, n, "excl_max",
+                                 false, in1);
+    print_result("excl_max", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Max>, out, gold, n,
                                  "excl_max_sim", true, in1);
     print_result("excl_max_sim", type_name, n, r);
@@ -406,8 +397,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "excl_max_sim_v1", true, in1);
     print_result("excl_max_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_inclusive_min(in1, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_incl_min<T>, out, gold, n, "incl_min",
+                                 false, in1);
+    print_result("incl_min", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Min>, out, gold, n,
                                  "incl_min_sim", true, in1);
     print_result("incl_min_sim", type_name, n, r);
@@ -416,8 +414,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "incl_min_sim_v1", true, in1);
     print_result("incl_min_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_exclusive_min(in1, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_excl_min<T>, out, gold, n, "excl_min",
+                                 false, in1);
+    print_result("excl_min", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Min>, out, gold, n,
                                  "excl_min_sim", true, in1);
     print_result("excl_min_sim", type_name, n, r);
@@ -426,8 +431,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "excl_min_sim_v1", true, in1);
     print_result("excl_min_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_inclusive_dot(in1, in2, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_incl_dot<T>, out, gold, n, "incl_dot",
+                                 false, in1, in2);
+    print_result("incl_dot", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_incl_dot_sim<T>, out, gold, n,
                                  "incl_dot_sim", true, in1, in2);
     print_result("incl_dot_sim", type_name, n, r);
@@ -436,8 +448,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "incl_dot_sim_v1", true, in1, in2);
     print_result("incl_dot_sim_v1", type_name, n, r);
 #endif
+#endif
 
     gold_exclusive_dot(in1, in2, gold, n);
+#if !defined(AOMP) && SCAN_TEST
+    r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
+                                 false, in1, in2);
+    print_result("excl_dot", type_name, n, r);
+#endif
+#if SCAN_SIMULATION
     r = run_bench_scan<T, is_fp>(scan_excl_dot_sim<T>, out, gold, n,
                                  "excl_dot_sim", true, in1, in2);
     print_result("excl_dot_sim", type_name, n, r);
@@ -446,12 +465,13 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
                                  "excl_dot_sim_v1", true, in1, in2);
     print_result("excl_dot_sim_v1", type_name, n, r);
 #endif
+#endif
 
+#if SCAN_SIMULATION
     free_device_sim<T>();
-#endif // SCAN_SIMULATION
+#endif
 
-#pragma omp target exit data map(delete : in1[0 : n], in2[0 : n], out[0 : n],  \
-                                     gold[0 : n])
+#pragma omp target exit data map(delete : in1[0 : n], in2[0 : n], out[0 : n])
 
     free(in1);
     free(in2);

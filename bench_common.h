@@ -156,7 +156,7 @@ void gold_exclusive_dot(const T *a, const T *b, T *out, uint64_t n) {
 // =========================================================================
 
 template <typename T, bool is_fp>
-bool check_single(T computed, T gold, const char *label,
+inline bool check_single(T computed, T gold, const char *label,
                   std::optional<uint64_t> index = std::nullopt) {
   if constexpr (!is_fp) {
     if (computed == gold)
