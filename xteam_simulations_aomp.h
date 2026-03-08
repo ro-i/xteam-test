@@ -319,7 +319,8 @@ T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
 }
 
 // =========================================================================
-// GPU cross-team scan kernels (AOMP 2-kernel algorithm with phase2 API)
+// GPU cross-team scan kernels (AOMP 2-kernel algorithm with hand-written K2
+// because old phase two function is too broken)
 // =========================================================================
 
 template <typename T, ScanOp Op>
@@ -344,13 +345,20 @@ void scan_incl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
                 XTEAM_NUM_TEAMS);
   }
 
-// K2: redistribution via phase2 API
+// K2: hand-written redistribution
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_func<T, Op>(), rnv, k, true);
+    const uint32_t omp_team_num = k / XTEAM_NUM_THREADS;
+    const uint32_t prev_stride_team_num = (k - 1) / XTEAM_NUM_THREADS;
+    const T prev_team_result =
+        omp_team_num ? d_team_vals<T>[omp_team_num - 1] : rnv;
+    const T prev_stride_result = (k && (omp_team_num == prev_stride_team_num))
+                                     ? d_storage<T>[k - 1]
+                                     : rnv;
+    const T prefix = scan_combine<T, Op>(prev_team_result, prev_stride_result);
+    for (uint64_t i = 0; i < stride && k * stride + i < n; i++)
+      out[k * stride + i] = scan_combine<T, Op>(out[k * stride + i], prefix);
   }
 }
 
@@ -376,13 +384,20 @@ void scan_excl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
                 XTEAM_NUM_TEAMS);
   }
 
-// K2: redistribution via phase2 API
+// K2: hand-written redistribution
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_func<T, Op>(), rnv, k, true);
+    const uint32_t omp_team_num = k / XTEAM_NUM_THREADS;
+    const uint32_t prev_stride_team_num = (k - 1) / XTEAM_NUM_THREADS;
+    const T prev_team_result =
+        omp_team_num ? d_team_vals<T>[omp_team_num - 1] : rnv;
+    const T prev_stride_result = (k && (omp_team_num == prev_stride_team_num))
+                                     ? d_storage<T>[k - 1]
+                                     : rnv;
+    const T prefix = scan_combine<T, Op>(prev_team_result, prev_stride_result);
+    for (uint64_t i = 0; i < stride && k * stride + i < n; i++)
+      out[k * stride + i] = scan_combine<T, Op>(out[k * stride + i], prefix);
   }
 }
 
@@ -409,13 +424,19 @@ void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
                 XTEAM_NUM_TEAMS);
   }
 
-// K2: redistribution via phase2 API
+// K2: hand-written redistribution
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_sum_func<T>(), rnv, k, true);
+    const uint32_t omp_team_num = k / XTEAM_NUM_THREADS;
+    const uint32_t prev_stride_team_num = (k - 1) / XTEAM_NUM_THREADS;
+    const T prev_team_result =
+        omp_team_num ? d_team_vals<T>[omp_team_num - 1] : rnv;
+    const T prev_stride_result = (k && (omp_team_num == prev_stride_team_num))
+                                     ? d_storage<T>[k - 1]
+                                     : rnv;
+    for (uint64_t i = 0; i < stride && k * stride + i < n; i++)
+      out[k * stride + i] += (prev_team_result + prev_stride_result);
   }
 }
 
@@ -442,13 +463,19 @@ void scan_excl_dot_sim(const T *__restrict a, const T *__restrict b,
                 XTEAM_NUM_TEAMS);
   }
 
-// K2: redistribution via phase2 API
+// K2: hand-written redistribution
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage<T>, d_team_vals<T>)
   for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    auto xteams_p2 = get_kmpc_xteams_phase2_func<T>();
-    xteams_p2(d_storage<T>, (int)stride, d_team_vals<T>, out,
-              get_rfun_sum_func<T>(), rnv, k, true);
+    const uint32_t omp_team_num = k / XTEAM_NUM_THREADS;
+    const uint32_t prev_stride_team_num = (k - 1) / XTEAM_NUM_THREADS;
+    const T prev_team_result =
+        omp_team_num ? d_team_vals<T>[omp_team_num - 1] : rnv;
+    const T prev_stride_result = (k && (omp_team_num == prev_stride_team_num))
+                                     ? d_storage<T>[k - 1]
+                                     : rnv;
+    for (uint64_t i = 0; i < stride && k * stride + i < n; i++)
+      out[k * stride + i] += (prev_team_result + prev_stride_result);
   }
 }
 
