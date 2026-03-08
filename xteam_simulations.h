@@ -35,9 +35,10 @@ template <typename T> T *d_scan_out = nullptr;
   _XTEAMR_FUNC(_UL, ul, ATTR, BODY)
 
 #define _XTEAMS_FUNC(T, TS, ATTR, BODY)                                        \
-  ATTR void __kmpc_xteams_##TS(                                                \
-      T v, T *result, uint32_t *status, T *aggregates, T *prefixes,            \
-      void (*_rf)(T *, T), const T rnv, const uint64_t k) BODY
+  ATTR void __kmpc_xteams_##TS(T v, T *result, uint32_t *status,               \
+                               T *aggregates, T *prefixes,                     \
+                               void (*_rf)(T *, T), const T rnv,               \
+                               const uint64_t k, bool is_inclusive) BODY
 
 #define _XTEAMS_FUNC_ALL(ATTR, BODY)                                           \
   _XTEAMS_FUNC(double, d, ATTR, BODY)                                          \
@@ -105,7 +106,7 @@ template <typename T> constexpr xteamr_fn_t<T> get_kmpc_xteamr_func() {
 
 template <typename T>
 constexpr void (*get_kmpc_xteams_func())(T, T *, uint32_t *, T *, T *, void (*)(T *, T),
-                               const T, const uint64_t) {
+                               const T, const uint64_t, bool) {
   if constexpr (std::is_same_v<T, double>) {
     return __kmpc_xteams_d;
   } else if constexpr (std::is_same_v<T, float>) {
@@ -191,7 +192,8 @@ void scan_incl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
     for (uint64_t idx = start; idx < end; idx++)
       val0 = scan_combine<T, Op>(val0, in[idx]);
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k);
+                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k,
+                              false);
     T running = d_scan_out<T>[k];
     for (uint64_t idx = start; idx < end; idx++) {
       running = scan_combine<T, Op>(running, in[idx]);
@@ -216,7 +218,8 @@ void scan_excl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
     for (uint64_t idx = start; idx < end; idx++)
       val0 = scan_combine<T, Op>(val0, in[idx]);
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k);
+                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k,
+                              false);
     T running = d_scan_out<T>[k];
     for (uint64_t idx = start; idx < end; idx++) {
       out[idx] = running;
@@ -241,7 +244,8 @@ void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
     for (uint64_t idx = start; idx < end; idx++)
       val0 += a[idx] * b[idx];
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k);
+                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k,
+                              false);
     T running = d_scan_out<T>[k];
     for (uint64_t idx = start; idx < end; idx++) {
       running += a[idx] * b[idx];
@@ -266,7 +270,8 @@ void scan_excl_dot_sim(const T *__restrict a, const T *__restrict b,
     for (uint64_t idx = start; idx < end; idx++)
       val0 += a[idx] * b[idx];
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k);
+                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k,
+                              false);
     T running = d_scan_out<T>[k];
     for (uint64_t idx = start; idx < end; idx++) {
       out[idx] = running;
@@ -295,7 +300,8 @@ void scan_incl_sim_v1(const T *__restrict in, T *__restrict out, uint64_t n) {
     for (uint64_t idx = start; idx < end; idx++)
       val0 = scan_combine<T, Op>(val0, in[idx]);
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k);
+                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k,
+                              false);
   }
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -328,7 +334,8 @@ void scan_excl_sim_v1(const T *__restrict in, T *__restrict out, uint64_t n) {
     for (uint64_t idx = start; idx < end; idx++)
       val0 = scan_combine<T, Op>(val0, in[idx]);
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k);
+                              d_prefixes<T>, get_rfun_func<T, Op>(), rnv, k,
+                              false);
   }
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -361,7 +368,8 @@ void scan_incl_dot_sim_v1(const T *__restrict a, const T *__restrict b,
     for (uint64_t idx = start; idx < end; idx++)
       val0 += a[idx] * b[idx];
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k);
+                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k,
+                              false);
   }
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -394,7 +402,8 @@ void scan_excl_dot_sim_v1(const T *__restrict a, const T *__restrict b,
     for (uint64_t idx = start; idx < end; idx++)
       val0 += a[idx] * b[idx];
     get_kmpc_xteams_func<T>()(val0, d_scan_out<T>, d_status, d_aggregates<T>,
-                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k);
+                              d_prefixes<T>, get_rfun_sum_func<T>(), T(0), k,
+                              false);
   }
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \

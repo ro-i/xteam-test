@@ -16,12 +16,28 @@
 #include "common.h"
 
 #if QUICK_RUN
+#if NOLOOP
+static const std::array<uint64_t, 1> array_sizes{XTEAM_TOTAL_NUM_THREADS};
+#else
 static const std::array<uint64_t, 1> array_sizes{177777777};
+#endif // NOLOOP
+#else
+#if NOLOOP
+static const std::array<uint64_t, 9> array_sizes{1,
+                                                 100,
+                                                 1024,
+                                                 2048,
+                                                 4096,
+                                                 8192,
+                                                 XTEAM_TOTAL_NUM_THREADS / 2,
+                                                 XTEAM_TOTAL_NUM_THREADS - 1,
+                                                 XTEAM_TOTAL_NUM_THREADS};
 #else
 static const std::array<uint64_t, 14> array_sizes{
     1,     100,     1024,    2048,     4096,     8192,      10000,
     81920, 1000000, 4194304, 23445657, 41943040, 100000000, 177777777};
-#endif
+#endif // NOLOOP
+#endif // QUICK_RUN
 
 using Clock = std::chrono::high_resolution_clock;
 

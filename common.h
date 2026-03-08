@@ -39,6 +39,10 @@
 #ifndef CODEGEN_AUTODETECTION
 #define CODEGEN_AUTODETECTION 0
 #endif
+// If true, use the no-loop scan kernels
+#ifndef NOLOOP
+#define NOLOOP 0
+#endif
 
 // default alignment for aligned_alloc
 #define ALIGNMENT 128
