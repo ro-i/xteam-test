@@ -10,6 +10,10 @@
 #else
 #include "xteam_simulations.h"
 #endif
+#else
+template <typename T> void init_device_sim() {}
+template <typename T> void reset_device_sim() {}
+template <typename T> void free_device_sim() {}
 #endif
 
 // =========================================================================
@@ -73,7 +77,7 @@ T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 // GPU cross-team scan kernels
 // =========================================================================
 
-#ifndef AOMP
+#if !defined(AOMP) && SCAN_TEST
 template <typename T>
 void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = T(0);
@@ -203,7 +207,7 @@ void scan_excl_dot(const T *__restrict a, const T *__restrict b,
     s += a[i] * b[i];
   }
 }
-#endif // AOMP
+#endif // !AOMP && SCAN_TEST
 
 // =========================================================================
 // Benchmark harness (OMP-specific run functions)

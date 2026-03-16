@@ -16,17 +16,11 @@
 OFFLOAD_ARCH ?= gfx90a
 
 # ── Common flags ────────────────────────────────────────────────────────────
-COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -fopenmp-target-xteam-scan -std=c++20 -save-temps
-COMMON_FLAGS_NOLOOP = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -fopenmp-target-xteam-no-loop-scan -std=c++20 -save-temps
+COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -std=c++20 -save-temps
 BENCH_ITERS_REDUCTION  ?= 1000
 BENCH_ITERS_SCAN  ?= 10
 WARMUP_ITERS ?= 2
 QUICK_RUN    ?= 0
-ifeq ($(QUICK_RUN),1)
-  ROUNDS     ?= 1
-else
-  ROUNDS     ?= 5
-endif
 DEFS         = -DBENCH_ITERS_REDUCTION=$(BENCH_ITERS_REDUCTION) -DBENCH_ITERS_SCAN=$(BENCH_ITERS_SCAN) -DWARMUP_ITERS=$(WARMUP_ITERS) -DQUICK_RUN=$(QUICK_RUN)
 DEFS_NOLOOP  = $(DEFS) -DNOLOOP
 
@@ -41,8 +35,13 @@ SRC = xteam_bench.cpp
 -include local.mk
 CXX_dev        ?=
 CXX_aomp       ?=
-FLAGS_dev      ?=
-FLAGS_aomp     ?= -DAOMP
+CXX_trunk      ?=
+FLAGS_dev           ?= -fopenmp-target-xteam-scan
+FLAGS_dev_no_loop   ?= -fopenmp-target-xteam-no-loop-scan
+FLAGS_aomp          ?= -DAOMP -fopenmp-target-xteam-scan
+FLAGS_aomp_no_loop  ?= -DAOMP -fopenmp-target-xteam-no-loop-scan
+FLAGS_trunk         ?=
+FLAGS_trunk_no_loop ?=
 
 # Collect all labels that have a non-empty CXX_<label>
 LABELS :=
@@ -51,6 +50,9 @@ ifneq ($(strip $(CXX_dev)),)
 endif
 ifneq ($(strip $(CXX_aomp)),)
   LABELS += aomp
+endif
+ifneq ($(strip $(CXX_trunk)),)
+  LABELS += trunk
 endif
 
 ifeq ($(strip $(LABELS)),)
@@ -79,11 +81,11 @@ all-no-loop:
 
 quick:
 	rm -f $(BINARIES)
-	$(MAKE) QUICK_RUN=1 ROUNDS=$(ROUNDS) WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS_REDUCTION=$(BENCH_ITERS_REDUCTION) BENCH_ITERS_SCAN=$(BENCH_ITERS_SCAN) $(BINARIES)
+	$(MAKE) QUICK_RUN=1 ROUNDS=1 WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS_REDUCTION=$(BENCH_ITERS_REDUCTION) BENCH_ITERS_SCAN=$(BENCH_ITERS_SCAN) $(BINARIES)
 
 quick-no-loop:
 	rm -f $(BINARIES_NOLOOP)
-	$(MAKE) QUICK_RUN=1 ROUNDS=$(ROUNDS) WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS_REDUCTION=$(BENCH_ITERS_REDUCTION) BENCH_ITERS_SCAN=$(BENCH_ITERS_SCAN) $(BINARIES_NOLOOP)
+	$(MAKE) QUICK_RUN=1 ROUNDS=1 WARMUP_ITERS=$(WARMUP_ITERS) BENCH_ITERS_REDUCTION=$(BENCH_ITERS_REDUCTION) BENCH_ITERS_SCAN=$(BENCH_ITERS_SCAN) $(BINARIES_NOLOOP)
 
 # Pattern rule: xteam_bench_<label> from xteam_bench.cpp
 define COMPILER_RULE
@@ -97,7 +99,7 @@ $(foreach L,$(LABELS),$(eval $(call COMPILER_RULE,$(L))))
 define COMPILER_RULE_NOLOOP
 xteam_bench_no_loop_$(1): $(SRC)
 	@test -n "$$(CXX_$(1))" || { echo "ERROR: CXX_$(1) is not set"; exit 1; }
-	$$(CXX_$(1)) $$(COMMON_FLAGS_NOLOOP) $$(DEFS_NOLOOP) $$(FLAGS_$(1)) -o $$@ $(SRC)
+	$$(CXX_$(1)) $$(COMMON_FLAGS) $$(DEFS_NOLOOP) $$(FLAGS_$(1)_NOLOOP) -o $$@ $(SRC)
 	@echo "Built $$@ with $$(CXX_$(1))"
 endef
 $(foreach L,$(LABELS),$(eval $(call COMPILER_RULE_NOLOOP,$(L))))
@@ -112,11 +114,11 @@ run-no-loop: all-no-loop
 
 quick-run: quick
 	@mkdir -p $(RESULTS_DIR)
-	./run_bench.sh -n $(ROUNDS) $(BINARIES)
+	./run_bench.sh -n 1 $(BINARIES)
 
 quick-run-no-loop: quick-no-loop
 	@mkdir -p $(RESULTS_DIR)
-	./run_bench.sh -n $(ROUNDS) $(BINARIES_NOLOOP)
+	./run_bench.sh -n 1 $(BINARIES_NOLOOP)
 
 clean:
 	rm -f $(BINARIES) $(BINARIES_NOLOOP) *.bc *.ii *.img *.ll *.o *.out *.resolution.txt *.s *.tmp

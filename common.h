@@ -18,16 +18,16 @@
 #define QUICK_RUN 0
 #endif
 #ifndef SCAN_TEST
-#define SCAN_TEST 1
+#define SCAN_TEST 0
 #endif
 #ifndef SCAN_SIMULATION
-#define SCAN_SIMULATION 1
+#define SCAN_SIMULATION 0
 #endif
 #ifndef REDUCTION_TEST
 #define REDUCTION_TEST 1
 #endif
 #ifndef REDUCTION_SIMULATION
-#define REDUCTION_SIMULATION 1
+#define REDUCTION_SIMULATION 0
 #endif
 #ifndef XTEAM_NUM_THREADS
 #define XTEAM_NUM_THREADS 512
