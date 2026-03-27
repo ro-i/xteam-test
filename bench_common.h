@@ -15,13 +15,14 @@
 
 #include "common.h"
 
-#if QUICK_RUN
+// Selected arrays sizes for quick run
 #if NOLOOP
-static const std::array<uint64_t, 1> array_sizes{XTEAM_TOTAL_NUM_THREADS};
+static const std::array<uint64_t, 1> array_sizes_quick{XTEAM_TOTAL_NUM_THREADS};
 #else
-static const std::array<uint64_t, 1> array_sizes{177777777};
+static const std::array<uint64_t, 1> array_sizes_quick{177777777};
 #endif // NOLOOP
-#else
+
+// Array sizes for full run
 #if NOLOOP
 static const std::array<uint64_t, 9> array_sizes{1,
                                                  100,
@@ -37,7 +38,6 @@ static const std::array<uint64_t, 14> array_sizes{
     1,     100,     1024,    2048,     4096,     8192,      10000,
     81920, 1000000, 4194304, 23445657, 41943040, 100000000, 177777777};
 #endif // NOLOOP
-#endif // QUICK_RUN
 
 using Clock = std::chrono::high_resolution_clock;
 
@@ -156,7 +156,7 @@ void gold_exclusive_dot(const T *a, const T *b, T *out, uint64_t n) {
 // =========================================================================
 
 template <typename T, bool is_fp>
-inline bool check_single(T computed, T gold, const char *label,
+inline bool check_single(T computed, T gold, const std::string &label,
                          std::optional<uint64_t> index = std::nullopt) {
   if constexpr (!is_fp) {
     if (computed == gold)
@@ -183,7 +183,7 @@ inline bool check_single(T computed, T gold, const char *label,
 }
 
 template <typename T, bool is_fp>
-bool check(const T *computed, const T *gold, uint64_t n, const char *label) {
+bool check(const T *computed, const T *gold, uint64_t n, const std::string &label) {
   for (uint64_t i = 0; i < n; i++) {
     if (!check_single<T, is_fp>(computed[i], gold[i], label, i))
       return false;
@@ -200,7 +200,7 @@ inline TimingResult create_timing_result(const std::vector<double> &times,
                       1e-6 * data_bytes / avg};
 }
 
-inline void print_result(const char *test, const char *type, uint64_t n,
+inline void print_result(const std::string &test, const std::string &type, uint64_t n,
                          const std::optional<TimingResult> &r) {
   if (!r) {
     std::cerr << std::format("{:<24} {:<8} {:>10}  FAIL\n", test, type, n);

@@ -9,3 +9,4 @@ xteam_bench_*
 *.out
 *.s
 *.tmp
+*.code-workspace

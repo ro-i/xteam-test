@@ -1,27 +1,29 @@
 // xteam_bench.cpp — OpenMP cross-team performance & correctness benchmark
 
-#include <omp.h>
+#include <unistd.h>
+
+#include "omp.h"
 
 #include "bench_common.h"
+#include "xteam_simulations_common.h"
 
-#if SCAN_SIMULATION || REDUCTION_SIMULATION
 #ifdef AOMP
 #include "xteam_simulations_aomp.h"
-#else
-#include "xteam_simulations.h"
+#elif defined(TRUNK_DEV)
+#include "xteam_simulations_trunk_dev.h"
+#elif defined(AOMP_DEV)
+#include "xteam_simulations_aomp_dev.h"
 #endif
-#else
-template <typename T> void init_device_sim() {}
-template <typename T> void reset_device_sim() {}
-template <typename T> void free_device_sim() {}
-#endif
+
+static Config conf;
+
 
 // =========================================================================
 // GPU cross-team reduction kernels
 // =========================================================================
 
 template <typename T> T reduce_sum(const T *__restrict in, uint64_t n) {
-  T s = T(0);
+  T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(+ : s)
 #else
@@ -34,7 +36,7 @@ template <typename T> T reduce_sum(const T *__restrict in, uint64_t n) {
 }
 
 template <typename T> T reduce_max(const T *__restrict in, uint64_t n) {
-  T m = std::numeric_limits<T>::lowest();
+  T m = red_identity<T, RedOp::Max>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(max : m)
 #else
@@ -47,7 +49,7 @@ template <typename T> T reduce_max(const T *__restrict in, uint64_t n) {
 }
 
 template <typename T> T reduce_min(const T *__restrict in, uint64_t n) {
-  T m = std::numeric_limits<T>::max();
+  T m = red_identity<T, RedOp::Min>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(min : m)
 #else
@@ -61,7 +63,7 @@ template <typename T> T reduce_min(const T *__restrict in, uint64_t n) {
 
 template <typename T>
 T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
-  T s = T(0);
+  T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(+ : s)
 #else
@@ -74,13 +76,13 @@ T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 }
 
 // =========================================================================
-// GPU cross-team scan kernels
+// GPU cross-team scan kernels (compilation unsupported by vanilla AOMP)
 // =========================================================================
 
-#if !defined(AOMP) && SCAN_TEST
+#ifdef AOMP_DEV
 template <typename T>
 void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T s = T(0);
+  T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, + : s)
 #else
@@ -96,7 +98,7 @@ void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 template <typename T>
 void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T s = T(0);
+  T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, + : s)
 #else
@@ -112,7 +114,7 @@ void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 template <typename T>
 void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T m = std::numeric_limits<T>::lowest();
+  T m = red_identity<T, RedOp::Max>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, max : m)
 #else
@@ -128,7 +130,7 @@ void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 template <typename T>
 void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T m = std::numeric_limits<T>::lowest();
+  T m = red_identity<T, RedOp::Max>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, max : m)
 #else
@@ -144,7 +146,7 @@ void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 template <typename T>
 void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T m = std::numeric_limits<T>::max();
+  T m = red_identity<T, RedOp::Min>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, min : m)
 #else
@@ -160,7 +162,7 @@ void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
 
 template <typename T>
 void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T m = std::numeric_limits<T>::max();
+  T m = red_identity<T, RedOp::Min>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, min : m)
 #else
@@ -177,7 +179,7 @@ void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_incl_dot(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
-  T s = T(0);
+  T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, + : s)
 #else
@@ -194,7 +196,7 @@ void scan_incl_dot(const T *__restrict a, const T *__restrict b,
 template <typename T>
 void scan_excl_dot(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
-  T s = T(0);
+  T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, + : s)
 #else
@@ -207,7 +209,26 @@ void scan_excl_dot(const T *__restrict a, const T *__restrict b,
     s += a[i] * b[i];
   }
 }
-#endif // !AOMP && SCAN_TEST
+#else // defined(AOMP_DEV)
+template <typename T>
+void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_incl_dot(const T *__restrict a, const T *__restrict b,
+                   T *__restrict out, uint64_t n) {}
+template <typename T>
+void scan_excl_dot(const T *__restrict a, const T *__restrict b,
+                   T *__restrict out, uint64_t n) {}
+#endif // defined(AOMP_DEV)
 
 // =========================================================================
 // Benchmark harness (OMP-specific run functions)
@@ -215,17 +236,17 @@ void scan_excl_dot(const T *__restrict a, const T *__restrict b,
 
 template <typename T, bool is_fp, typename Kernel, typename... Inputs>
 std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
-                                           uint64_t n, const char *label,
-                                           bool is_sim, Inputs... inputs) {
-  std::vector<double> times(BENCH_ITERS_SCAN);
-  for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS_SCAN; t++) {
-    if (is_sim)
-      reset_device_sim<T>();
+                                           uint64_t n, const std::string &label,
+                                           Simulation<T> *sim, Inputs... inputs) {
+  std::vector<double> times(conf.bench_iters_scan);
+  for (int t = 0; t < conf.warmup_iters + conf.bench_iters_scan; t++) {
+    if (sim)
+      sim->reset_device();
     auto t1 = Clock::now();
     kernel(inputs..., out, n);
     auto t2 = Clock::now();
-    if (t >= WARMUP_ITERS) {
-      times[t - WARMUP_ITERS] =
+    if (t >= conf.warmup_iters) {
+      times[t - conf.warmup_iters] =
           std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1)
               .count();
     }
@@ -239,15 +260,17 @@ std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
 
 template <typename T, bool is_fp, typename Kernel, typename... Inputs>
 std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
-                                             const char *label,
-                                             Inputs... inputs) {
-  std::vector<double> times(BENCH_ITERS_REDUCTION);
-  for (int t = 0; t < WARMUP_ITERS + BENCH_ITERS_REDUCTION; t++) {
+                                             const std::string &label,
+                                             Simulation<T> *sim, Inputs... inputs) {
+  std::vector<double> times(conf.bench_iters_reduction);
+  for (int t = 0; t < conf.warmup_iters + conf.bench_iters_reduction; t++) {
+    if (sim)
+      sim->reset_device();
     auto t1 = Clock::now();
     T result = kernel(inputs..., n);
     auto t2 = Clock::now();
-    if (t >= WARMUP_ITERS) {
-      times[t - WARMUP_ITERS] =
+    if (t >= conf.warmup_iters) {
+      times[t - conf.warmup_iters] =
           std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1)
               .count();
     }
@@ -263,7 +286,7 @@ std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
 // =========================================================================
 
 template <typename T, bool is_fp> void run_type(const char *type_name) {
-  for (uint64_t n : array_sizes) {
+  for (uint64_t n : conf.array_sizes) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
     T *out = alloc<T>(n);
@@ -272,243 +295,356 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
 #pragma omp target enter data map(to : in1[0 : n], in2[0 : n], out[0 : n])
 
-    // Cross-team reductions (codegen + simulations)
-    T gold_val;
-    T *gold = static_cast<T *>(malloc(sizeof(T) * n));
+#ifdef AOMP
+    SimulationAOMP<T> *simulation = new SimulationAOMP<T>();
+#elif defined(TRUNK_DEV)
+    SimulationTrunkDev<T> *simulation = new SimulationTrunkDev<T>();
+#elif defined(AOMP_DEV)
+    SimulationAOMPDev<T> *simulation = new SimulationAOMPDev<T>();
+#else
+    Simulation<T> *simulation = new Simulation<T>();
+#endif
+    simulation->init_device();
 
-#if REDUCTION_SIMULATION
-    init_device_sim<T>();
-#endif
+    if (conf.reduction || conf.reduction_simulation) {
+      // Cross-team reductions (codegen + simulations)
+      T gold_sum = gold_reduce_sum(in1, n);
+      T gold_max = gold_reduce_max(in1, n);
+      T gold_min = gold_reduce_min(in1, n);
+      T gold_dot = gold_reduce_dot(in1, in2, n);
 
-    gold_val = gold_reduce_sum(in1, n);
-#if REDUCTION_TEST
-    r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_val, n, "red_sum", in1);
-    print_result("red_sum", type_name, n, r);
-#endif
-#if REDUCTION_SIMULATION
-    r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Sum>, gold_val, n,
-                                   "red_sum_sim", in1);
-    print_result("red_sum_sim", type_name, n, r);
-#endif
+      if (conf.reduction) {
+        // sum reduction
+        r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_sum, n, "red_sum", simulation, in1);
+        print_result("red_sum", type_name, n, r);
+        // max reduction
+        r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold_max, n, "red_max", simulation, in1);
+        print_result("red_max", type_name, n, r);
+        // min reduction
+        r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold_min, n, "red_min", simulation, in1);
+        print_result("red_min", type_name, n, r);
+        // dot reduction
+        r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_dot, n, "red_dot", simulation, in1, in2);
+        print_result("red_dot", type_name, n, r);
+      }
 
-    gold_val = gold_reduce_max(in1, n);
-#if REDUCTION_TEST
-    r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold_val, n, "red_max", in1);
-    print_result("red_max", type_name, n, r);
-#endif
-#if REDUCTION_SIMULATION
-    r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Max>, gold_val, n,
-                                   "red_max_sim", in1);
-    print_result("red_max_sim", type_name, n, r);
-#endif
+      if (conf.reduction_simulation) {
+        // sum reduction
+        for (const auto &[name, func] :
+            simulation->template get_all_reduce_variants<RedOp::Sum>()) {
+          r = run_bench_reduce<T, is_fp>(func, gold_sum, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+        // max reduction
+        for (const auto &[name, func] :
+            simulation->template get_all_reduce_variants<RedOp::Max>()) {
+          r = run_bench_reduce<T, is_fp>(func, gold_max, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+        // min reduction
+        for (const auto &[name, func] :
+            simulation->template get_all_reduce_variants<RedOp::Min>()) {
+          r = run_bench_reduce<T, is_fp>(func, gold_min, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+        // dot reduction
+        for (const auto &[name, func] :
+            simulation->get_all_reduce_dot_variants()) {
+          r = run_bench_reduce<T, is_fp>(func, gold_dot, n, name, simulation,
+                                        in1, in2);
+          print_result(name, type_name, n, r);
+        }
+      }
+    }
 
-    gold_val = gold_reduce_min(in1, n);
-#if REDUCTION_TEST
-    r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold_val, n, "red_min", in1);
-    print_result("red_min", type_name, n, r);
-#endif
-#if REDUCTION_SIMULATION
-    r = run_bench_reduce<T, is_fp>(reduce_sim<T, ScanOp::Min>, gold_val, n,
-                                   "red_min_sim", in1);
-    print_result("red_min_sim", type_name, n, r);
-#endif
+    if (conf.scan || conf.scan_simulation) {
+      // Cross-team scans (codegen + simulations)
+      T *gold = static_cast<T *>(malloc(sizeof(T) * n));
 
-    gold_val = gold_reduce_dot(in1, in2, n);
-#if REDUCTION_TEST
-    r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_val, n, "red_dot", in1,
-                                   in2);
-    print_result("red_dot", type_name, n, r);
-#endif
-#if REDUCTION_SIMULATION
-    r = run_bench_reduce<T, is_fp>(reduce_dot_sim<T>, gold_val, n,
-                                   "red_dot_sim", in1, in2);
-    print_result("red_dot_sim", type_name, n, r);
-#endif
+      simulation->reset_device();
 
-#if REDUCTION_SIMULATION
-    free_device_sim<T>();
-#endif
+      // ================================================================
+      // inclusive sum scan
+      // ================================================================
+      gold_inclusive_sum(in1, gold, n);
 
-    // Cross-team scans (codegen + simulations)
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_incl_sum<T>, out, gold, n, "incl_sum",
+                                    simulation, in1);
+        print_result("incl_sum", type_name, n, r);
+      }
 
-#if SCAN_SIMULATION
-    init_device_sim<T>();
-#endif
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->template get_all_scan_incl_variants<RedOp::Sum>()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+      }
 
-    gold_inclusive_sum(in1, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_incl_sum<T>, out, gold, n, "incl_sum",
-                                 false, in1);
-    print_result("incl_sum", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Sum>, out, gold, n,
-                                 "incl_sum_sim", true, in1);
-    print_result("incl_sum_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Sum>, out, gold, n,
-                                 "incl_sum_sim_v1", true, in1);
-    print_result("incl_sum_sim_v1", type_name, n, r);
-#endif
-#endif
+      // ================================================================
+      // exclusive sum scan
+      // ================================================================
+      gold_exclusive_sum(in1, gold, n);
 
-    gold_exclusive_sum(in1, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_excl_sum<T>, out, gold, n, "excl_sum",
-                                 false, in1);
-    print_result("excl_sum", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Sum>, out, gold, n,
-                                 "excl_sum_sim", true, in1);
-    print_result("excl_sum_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Sum>, out, gold, n,
-                                 "excl_sum_sim_v1", true, in1);
-    print_result("excl_sum_sim_v1", type_name, n, r);
-#endif
-#endif
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_excl_sum<T>, out, gold, n, "excl_sum",
+                                    simulation, in1);
+        print_result("excl_sum", type_name, n, r);
+      }
 
-    gold_inclusive_max(in1, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_incl_max<T>, out, gold, n, "incl_max",
-                                 false, in1);
-    print_result("incl_max", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Max>, out, gold, n,
-                                 "incl_max_sim", true, in1);
-    print_result("incl_max_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Max>, out, gold, n,
-                                 "incl_max_sim_v1", true, in1);
-    print_result("incl_max_sim_v1", type_name, n, r);
-#endif
-#endif
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->template get_all_scan_excl_variants<RedOp::Sum>()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+      }
 
-    gold_exclusive_max(in1, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_excl_max<T>, out, gold, n, "excl_max",
-                                 false, in1);
-    print_result("excl_max", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Max>, out, gold, n,
-                                 "excl_max_sim", true, in1);
-    print_result("excl_max_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Max>, out, gold, n,
-                                 "excl_max_sim_v1", true, in1);
-    print_result("excl_max_sim_v1", type_name, n, r);
-#endif
-#endif
+      // ================================================================
+      // inclusive max scan
+      // ================================================================
+      gold_inclusive_max(in1, gold, n);
 
-    gold_inclusive_min(in1, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_incl_min<T>, out, gold, n, "incl_min",
-                                 false, in1);
-    print_result("incl_min", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_incl_sim<T, ScanOp::Min>, out, gold, n,
-                                 "incl_min_sim", true, in1);
-    print_result("incl_min_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_sim_v1<T, ScanOp::Min>, out, gold, n,
-                                 "incl_min_sim_v1", true, in1);
-    print_result("incl_min_sim_v1", type_name, n, r);
-#endif
-#endif
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_incl_max<T>, out, gold, n, "incl_max",
+                                    simulation, in1);
+        print_result("incl_max", type_name, n, r);
+      }
 
-    gold_exclusive_min(in1, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_excl_min<T>, out, gold, n, "excl_min",
-                                 false, in1);
-    print_result("excl_min", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_excl_sim<T, ScanOp::Min>, out, gold, n,
-                                 "excl_min_sim", true, in1);
-    print_result("excl_min_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_sim_v1<T, ScanOp::Min>, out, gold, n,
-                                 "excl_min_sim_v1", true, in1);
-    print_result("excl_min_sim_v1", type_name, n, r);
-#endif
-#endif
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->template get_all_scan_incl_variants<RedOp::Max>()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+      }
 
-    gold_inclusive_dot(in1, in2, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_incl_dot<T>, out, gold, n, "incl_dot",
-                                 false, in1, in2);
-    print_result("incl_dot", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim<T>, out, gold, n,
-                                 "incl_dot_sim", true, in1, in2);
-    print_result("incl_dot_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_incl_dot_sim_v1<T>, out, gold, n,
-                                 "incl_dot_sim_v1", true, in1, in2);
-    print_result("incl_dot_sim_v1", type_name, n, r);
-#endif
-#endif
+      // ================================================================
+      // exclusive max scan
+      // ================================================================
+      gold_exclusive_max(in1, gold, n);
 
-    gold_exclusive_dot(in1, in2, gold, n);
-#if !defined(AOMP) && SCAN_TEST
-    r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
-                                 false, in1, in2);
-    print_result("excl_dot", type_name, n, r);
-#endif
-#if SCAN_SIMULATION
-    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim<T>, out, gold, n,
-                                 "excl_dot_sim", true, in1, in2);
-    print_result("excl_dot_sim", type_name, n, r);
-#ifndef AOMP
-    r = run_bench_scan<T, is_fp>(scan_excl_dot_sim_v1<T>, out, gold, n,
-                                 "excl_dot_sim_v1", true, in1, in2);
-    print_result("excl_dot_sim_v1", type_name, n, r);
-#endif
-#endif
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_excl_max<T>, out, gold, n, "excl_max",
+                                    simulation, in1);
+        print_result("excl_max", type_name, n, r);
+      }
 
-#if SCAN_SIMULATION
-    free_device_sim<T>();
-#endif
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->template get_all_scan_excl_variants<RedOp::Max>()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+      }
+
+      // ================================================================
+      // inclusive min scan
+      // ================================================================
+      gold_inclusive_min(in1, gold, n);
+
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_incl_min<T>, out, gold, n, "incl_min",
+                                    simulation, in1);
+        print_result("incl_min", type_name, n, r);
+      }
+
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->template get_all_scan_incl_variants<RedOp::Min>()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+      }
+
+      // ================================================================
+      // exclusive min scan
+      // ================================================================
+      gold_exclusive_min(in1, gold, n);
+
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_excl_min<T>, out, gold, n, "excl_min",
+                                    simulation, in1);
+        print_result("excl_min", type_name, n, r);
+      }
+
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->template get_all_scan_excl_variants<RedOp::Min>()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1);
+          print_result(name, type_name, n, r);
+        }
+      }
+
+      // ================================================================
+      // inclusive dot scan
+      // ================================================================
+      gold_inclusive_dot(in1, in2, gold, n);
+
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_incl_dot<T>, out, gold, n, "incl_dot",
+                                    simulation, in1, in2);
+        print_result("incl_dot", type_name, n, r);
+      }
+
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->get_all_scan_incl_dot_variants()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1, in2);
+          print_result(name, type_name, n, r);
+        }
+      }
+
+      // ================================================================
+      // exclusive dot scan
+      // ================================================================
+      gold_exclusive_dot(in1, in2, gold, n);
+
+      if (conf.scan) {
+        r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
+                                    simulation, in1, in2);
+        print_result("excl_dot", type_name, n, r);
+      }
+
+      if (conf.scan_simulation) {
+        for (const auto &[name, func] :
+            simulation->get_all_scan_excl_dot_variants()) {
+          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
+                                        in1, in2);
+          print_result(name, type_name, n, r);
+        }
+      }
+
+      free(gold);
+    }
 
 #pragma omp target exit data map(delete : in1[0 : n], in2[0 : n], out[0 : n])
 
     free(in1);
     free(in2);
     free(out);
-    free(gold);
-  }
+    simulation->free_device();
+    delete simulation;
+    }
+}
+
+static void usage(const char *argv0) {
+  std::cout << "Usage: " << argv0 << " [-b <int>] [-B <int>] [-q] [-r] [-s] [-R] [-S] [-w <int>] [-h]\n";
+  std::cout << "  -b N: Benchmark iterations for reduction\n";
+  std::cout << "  -B N: Benchmark iterations for scan\n";
+  std::cout << "  -q: Quick run (test only one array size)\n";
+  std::cout << "  -r: Run reduction tests\n";
+  std::cout << "  -s: Run scan tests\n";
+  std::cout << "  -R: Run reduction simulations\n";
+  std::cout << "  -S: Run scan simulations\n";
+  std::cout << "  -w N: Warmup iterations\n";
+  std::cout << "  -h: Show this help message\n";
 }
 
 // =========================================================================
 // Main
 // =========================================================================
 int main(int argc, char **argv) {
-  std::cout << std::format("xteam benchmark — {} warmup, {} timed iterations "
-                           "(reduction), {} timed iterations (scan), "
-                           "{} teams, {} threads, codegen autodetection: {}\n",
-                           WARMUP_ITERS, BENCH_ITERS_REDUCTION,
-                           BENCH_ITERS_SCAN, XTEAM_NUM_TEAMS, XTEAM_NUM_THREADS,
-                           CODEGEN_AUTODETECTION ? "true" : "false");
-  std::cout << "Array sizes: ";
-  for (uint64_t sz : array_sizes)
-    std::cout << std::format(" {}", sz);
-  std::cout << "\n\n";
+  int opt;
 
-  print_header();
+  while ((opt = getopt(argc, argv, "b:B:qrsRSw:h")) != -1) {
+    switch (opt) {
+      case 'b':
+        conf.bench_iters_reduction = std::stoi(optarg);
+        break;
+      case 'B':
+        conf.bench_iters_scan = std::stoi(optarg);
+        break;
+      case 'q':
+        conf.quick_run = true;
+        break;
+      case 'r':
+        conf.reduction = true;
+        break;
+      case 's':
+#ifdef AOMP_DEV
+        conf.scan = true;
+#else
+        conf.scan = false;
+#endif
+        if (!conf.scan)
+          std::cerr << "warning: scan codegen unsupported on this compiler\n";
+        break;
+      case 'R':
+#ifdef TRUNK
+        conf.reduction_simulation = false;
+#else
+        conf.reduction_simulation = true;
+#endif
+        if (!conf.reduction_simulation)
+          std::cerr << "warning: reduction simulations unsupported on this compiler\n";
+        break;
+      case 'S':
+#ifdef TRUNK
+        conf.scan_simulation = false;
+#else
+        conf.scan_simulation = true;
+#endif
+        if (!conf.scan_simulation)
+          std::cerr << "warning: scan simulations unsupported on this compiler\n";
+        break;
+      case 'w':
+        conf.warmup_iters = std::stoi(optarg);
+        break;
+      case 'h':
+        usage(argv[0]);
+        return EXIT_SUCCESS;
+      default:
+        usage(argv[0]);
+        return EXIT_FAILURE;
+    }
+  }
+  if (!conf.reduction && !conf.scan && !conf.reduction_simulation && !conf.scan_simulation) {
+    std::cerr << "error: at least one of -r, -s, -R, -S must be specified\n";
+    usage(argv[0]);
+    return EXIT_FAILURE;
+  }
 
-  std::cout << "\n--- int ---\n";
-  run_type<int, false>("int");
+  if (conf.quick_run)
+    conf.array_sizes.assign(array_sizes_quick.begin(), array_sizes_quick.end());
+  else
+    conf.array_sizes.assign(array_sizes.begin(), array_sizes.end());
 
-  std::cout << "\n--- long ---\n";
-  run_type<long, false>("long");
+  std::cout << std::format(
+    "xteam benchmark (quick run: {}) — {} warmup, {} timed "
+    "iterations "
+    "(reduction), {} timed iterations (scan), "
+    "{} teams, {} threads, codegen autodetection: {}\n",
+    conf.quick_run ? "true" : "false", conf.warmup_iters,
+    conf.bench_iters_reduction, conf.bench_iters_scan, XTEAM_NUM_TEAMS,
+    XTEAM_NUM_THREADS, CODEGEN_AUTODETECTION ? "true" : "false");
 
-  std::cout << "\n--- double ---\n";
-  run_type<double, true>("double");
+std::cout << "Array sizes: ";
+for (uint64_t sz : conf.array_sizes)
+  std::cout << std::format(" {}", sz);
+std::cout << "\n\n";
 
-  return EXIT_SUCCESS;
+print_header();
+
+std::cout << "\n--- int ---\n";
+run_type<int, false>("int");
+
+std::cout << "\n--- long ---\n";
+run_type<long, false>("long");
+
+std::cout << "\n--- double ---\n";
+run_type<double, true>("double");
+
+return EXIT_SUCCESS;
 }

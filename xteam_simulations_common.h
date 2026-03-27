@@ -4,13 +4,15 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <limits>
-#include <omp.h>
+#include <string>
 #include <type_traits>
+#include <vector>
 
-// Common reduction/scan device state
-uint32_t *d_td = nullptr;
-template <typename T> T *d_team_vals = nullptr;
+#include "omp.h"
+
+#include "common.h"
 
 // =========================================================================
 // Common macros and rfun declarations shared by dev and AOMP simulations
@@ -52,159 +54,192 @@ _REDUCTION_FUNC_ALL(min, {})
 #endif
 
 // =========================================================================
-// Rfun getter helpers (shared by dev and AOMP simulations)
+// Simulation base class
 // =========================================================================
+template <typename T> class Simulation {
+public:
+  virtual ~Simulation() = default;
+  Simulation() = default;
+  Simulation(const Simulation &) = delete;
+  Simulation &operator=(const Simulation &) = delete;
+  Simulation(Simulation &&) = delete;
+  Simulation &operator=(Simulation &&) = delete;
 
-template <typename T> constexpr void (*get_rfun_sum_func())(T *, T) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_sum_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_sum_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_sum_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_sum_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_sum_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_sum_ul;
-  } else {
-    static_assert(false, "Unsupported type");
+  virtual void init_device() {};
+  virtual void reset_device() {};
+  virtual void free_device() {};
+
+
+  // Return descriptions and implementations for all supported reduction and
+  // scan variants.  Return empty vectors if no variants are supported for the
+  // given operation.  Be non-virtual to allow RedOp as a template parameter.
+
+  // Get all supported versions of reduce ...
+  template <RedOp Op>
+  std::vector<
+      std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
+  get_all_reduce_variants() { return {}; }
+
+  // ... and reduce_dot.
+  std::vector<std::pair<
+      std::string,
+      std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
+  get_all_reduce_dot_variants() { return {}; }
+
+  // Get all supported versions of scan ...
+  template <RedOp Op>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_incl_variants() { return {}; }
+
+  template <RedOp Op>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_excl_variants() { return {}; }
+
+  // ... and scan_dot.
+  std::vector<std::pair<
+      std::string, std::function<void(const T *__restrict, const T *__restrict,
+                                      T *__restrict, uint64_t)>>>
+  get_all_scan_excl_dot_variants() { return {}; }
+
+  std::vector<std::pair<
+      std::string, std::function<void(const T *__restrict, const T *__restrict,
+                                      T *__restrict, uint64_t)>>>
+  get_all_scan_incl_dot_variants() { return {}; }
+};
+
+// Base class for AOMP-based simulations
+template <typename T> class SimulationAOMPBase : public Simulation<T> {
+public:
+  static constexpr void (*get_rfun_sum_func())(T *, T) {
+    if constexpr (std::is_same_v<T, double>)
+      return __kmpc_rfun_sum_d;
+    else if constexpr (std::is_same_v<T, float>)
+      return __kmpc_rfun_sum_f;
+    else if constexpr (std::is_same_v<T, int>)
+      return __kmpc_rfun_sum_i;
+    else if constexpr (std::is_same_v<T, unsigned int>)
+      return __kmpc_rfun_sum_ui;
+    else if constexpr (std::is_same_v<T, long>)
+      return __kmpc_rfun_sum_l;
+    else if constexpr (std::is_same_v<T, unsigned long>)
+      return __kmpc_rfun_sum_ul;
+    else
+      static_assert(false, "Unsupported type");
   }
-}
 
-template <typename T> constexpr void (*get_rfun_max_func())(T *, T) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_max_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_max_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_max_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_max_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_max_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_max_ul;
-  } else {
-    static_assert(false, "Unsupported type");
+  static constexpr void (*get_rfun_max_func())(T *, T) {
+    if constexpr (std::is_same_v<T, double>)
+      return __kmpc_rfun_max_d;
+    else if constexpr (std::is_same_v<T, float>)
+      return __kmpc_rfun_max_f;
+    else if constexpr (std::is_same_v<T, int>)
+      return __kmpc_rfun_max_i;
+    else if constexpr (std::is_same_v<T, unsigned int>)
+      return __kmpc_rfun_max_ui;
+    else if constexpr (std::is_same_v<T, long>)
+      return __kmpc_rfun_max_l;
+    else if constexpr (std::is_same_v<T, unsigned long>)
+      return __kmpc_rfun_max_ul;
+    else
+      static_assert(false, "Unsupported type");
   }
-}
 
-template <typename T> constexpr void (*get_rfun_min_func())(T *, T) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_min_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_min_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_min_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_min_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_min_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_min_ul;
-  } else {
-    static_assert(false, "Unsupported type");
+  static constexpr void (*get_rfun_min_func())(T *, T) {
+    if constexpr (std::is_same_v<T, double>)
+      return __kmpc_rfun_min_d;
+    else if constexpr (std::is_same_v<T, float>)
+      return __kmpc_rfun_min_f;
+    else if constexpr (std::is_same_v<T, int>)
+      return __kmpc_rfun_min_i;
+    else if constexpr (std::is_same_v<T, unsigned int>)
+      return __kmpc_rfun_min_ui;
+    else if constexpr (std::is_same_v<T, long>)
+      return __kmpc_rfun_min_l;
+    else if constexpr (std::is_same_v<T, unsigned long>)
+      return __kmpc_rfun_min_ul;
+    else
+      static_assert(false, "Unsupported type");
   }
-}
 
-template <typename T>
-constexpr void (*get_rfun_sum_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_sum_lds_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_sum_lds_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_sum_lds_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_sum_lds_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_sum_lds_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_sum_lds_ul;
-  } else {
-    static_assert(false, "Unsupported type");
+  static constexpr void (*get_rfun_sum_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+    if constexpr (std::is_same_v<T, double>)
+      return __kmpc_rfun_sum_lds_d;
+    else if constexpr (std::is_same_v<T, float>)
+      return __kmpc_rfun_sum_lds_f;
+    else if constexpr (std::is_same_v<T, int>)
+      return __kmpc_rfun_sum_lds_i;
+    else if constexpr (std::is_same_v<T, unsigned int>)
+      return __kmpc_rfun_sum_lds_ui;
+    else if constexpr (std::is_same_v<T, long>)
+      return __kmpc_rfun_sum_lds_l;
+    else if constexpr (std::is_same_v<T, unsigned long>)
+      return __kmpc_rfun_sum_lds_ul;
+    else
+      static_assert(false, "Unsupported type");
   }
-}
 
-template <typename T>
-constexpr void (*get_rfun_max_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_max_lds_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_max_lds_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_max_lds_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_max_lds_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_max_lds_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_max_lds_ul;
-  } else {
-    static_assert(false, "Unsupported type");
+  static constexpr void (*get_rfun_max_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+    if constexpr (std::is_same_v<T, double>)
+      return __kmpc_rfun_max_lds_d;
+    else if constexpr (std::is_same_v<T, float>)
+      return __kmpc_rfun_max_lds_f;
+    else if constexpr (std::is_same_v<T, int>)
+      return __kmpc_rfun_max_lds_i;
+    else if constexpr (std::is_same_v<T, unsigned int>)
+      return __kmpc_rfun_max_lds_ui;
+    else if constexpr (std::is_same_v<T, long>)
+      return __kmpc_rfun_max_lds_l;
+    else if constexpr (std::is_same_v<T, unsigned long>)
+      return __kmpc_rfun_max_lds_ul;
+    else
+      static_assert(false, "Unsupported type");
   }
-}
 
-template <typename T>
-constexpr void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (std::is_same_v<T, double>) {
-    return __kmpc_rfun_min_lds_d;
-  } else if constexpr (std::is_same_v<T, float>) {
-    return __kmpc_rfun_min_lds_f;
-  } else if constexpr (std::is_same_v<T, int>) {
-    return __kmpc_rfun_min_lds_i;
-  } else if constexpr (std::is_same_v<T, unsigned int>) {
-    return __kmpc_rfun_min_lds_ui;
-  } else if constexpr (std::is_same_v<T, long>) {
-    return __kmpc_rfun_min_lds_l;
-  } else if constexpr (std::is_same_v<T, unsigned long>) {
-    return __kmpc_rfun_min_lds_ul;
-  } else {
-    static_assert(false, "Unsupported type");
+  static constexpr void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+    if constexpr (std::is_same_v<T, double>)
+      return __kmpc_rfun_min_lds_d;
+    else if constexpr (std::is_same_v<T, float>)
+      return __kmpc_rfun_min_lds_f;
+    else if constexpr (std::is_same_v<T, int>)
+      return __kmpc_rfun_min_lds_i;
+    else if constexpr (std::is_same_v<T, unsigned int>)
+      return __kmpc_rfun_min_lds_ui;
+    else if constexpr (std::is_same_v<T, long>)
+      return __kmpc_rfun_min_lds_l;
+    else if constexpr (std::is_same_v<T, unsigned long>)
+      return __kmpc_rfun_min_lds_ul;
+    else
+      static_assert(false, "Unsupported type");
   }
-}
 
-// =========================================================================
-// ScanOp-generic helpers
-// =========================================================================
+  template <RedOp Op> static constexpr void (*get_rfun_func())(T *, T) {
+    if constexpr (Op == RedOp::Sum)
+      return get_rfun_sum_func();
+    else if constexpr (Op == RedOp::Max)
+      return get_rfun_max_func();
+    else if constexpr (Op == RedOp::Min)
+      return get_rfun_min_func();
+    else
+      static_assert(false, "Unsupported scan op");
+  }
 
-enum class ScanOp { Sum, Max, Min };
+  template <RedOp Op>
+  static constexpr void (*get_rfun_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+    if constexpr (Op == RedOp::Sum)
+      return get_rfun_sum_lds_func();
+    else if constexpr (Op == RedOp::Max)
+      return get_rfun_max_lds_func();
+    else if constexpr (Op == RedOp::Min)
+      return get_rfun_min_lds_func();
+    else
+      static_assert(false, "Unsupported scan op");
+  }
+};
 
-template <typename T, ScanOp Op> constexpr T scan_identity() {
-  if constexpr (Op == ScanOp::Sum)
-    return T(0);
-  else if constexpr (Op == ScanOp::Max)
-    return std::numeric_limits<T>::lowest();
-  else
-    return std::numeric_limits<T>::max();
-}
-
-template <typename T, ScanOp Op> constexpr T scan_combine(T a, T b) {
-  if constexpr (Op == ScanOp::Sum)
-    return a + b;
-  else if constexpr (Op == ScanOp::Max)
-    return std::max(a, b);
-  else
-    return std::min(a, b);
-}
-
-template <typename T, ScanOp Op> constexpr void (*get_rfun_func())(T *, T) {
-  if constexpr (Op == ScanOp::Sum)
-    return get_rfun_sum_func<T>();
-  else if constexpr (Op == ScanOp::Max)
-    return get_rfun_max_func<T>();
-  else
-    return get_rfun_min_func<T>();
-}
-
-template <typename T, ScanOp Op>
-constexpr void (*get_rfun_lds_func())(_RF_LDS T *, _RF_LDS T *) {
-  if constexpr (Op == ScanOp::Sum)
-    return get_rfun_sum_lds_func<T>();
-  else if constexpr (Op == ScanOp::Max)
-    return get_rfun_max_lds_func<T>();
-  else
-    return get_rfun_min_lds_func<T>();
-}
+// Base class for trunk-based simulations
+template <typename T> class SimulationTrunkBase : public Simulation<T> {
+};
