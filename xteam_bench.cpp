@@ -9,6 +9,8 @@
 
 #ifdef AOMP
 #include "xteam_simulations_aomp.h"
+#elif defined(TRUNK)
+#include "xteam_simulations_trunk.h"
 #elif defined(TRUNK_DEV)
 #include "xteam_simulations_trunk_dev.h"
 #elif defined(AOMP_DEV)
@@ -297,6 +299,8 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
 #ifdef AOMP
     SimulationAOMP<T> *simulation = new SimulationAOMP<T>();
+#elif defined(TRUNK)
+    SimulationTrunk<T> *simulation = new SimulationTrunk<T>();
 #elif defined(TRUNK_DEV)
     SimulationTrunkDev<T> *simulation = new SimulationTrunkDev<T>();
 #elif defined(AOMP_DEV)
@@ -575,25 +579,15 @@ int main(int argc, char **argv) {
       case 's':
 #ifdef AOMP_DEV
         conf.scan = true;
-#else
-        conf.scan = false;
 #endif
         if (!conf.scan)
           std::cerr << "warning: scan codegen unsupported on this compiler\n";
         break;
       case 'R':
-#ifdef TRUNK
-        conf.reduction_simulation = false;
-#else
         conf.reduction_simulation = true;
-#endif
-        if (!conf.reduction_simulation)
-          std::cerr << "warning: reduction simulations unsupported on this compiler\n";
         break;
       case 'S':
-#ifdef TRUNK
-        conf.scan_simulation = false;
-#else
+#ifndef TRUNK
         conf.scan_simulation = true;
 #endif
         if (!conf.scan_simulation)

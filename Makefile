@@ -58,7 +58,7 @@ all: $(BINARIES)
 
 # Pattern rule: xteam_bench_<label> from xteam_bench.cpp
 define COMPILER_RULE
-xteam_bench_$(1): $(SRC)
+xteam_bench_$(1): $(SRC) xteam_simulations_$(1).h
 	@test -n "$$(CXX_$(1))" || { echo "ERROR: CXX_$(1) is not set"; exit 1; }
 	$$(CXX_$(1)) $$(DEFS_$(1)) $$(FLAGS_$(1)) -o $$@ $(SRC)
 endef
