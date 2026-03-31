@@ -72,6 +72,9 @@ $(1): xteam_bench_$(1)
 endef
 $(foreach L,$(LABELS),$(eval $(call PLAIN_LABEL_RULE,$(L))))
 
+format:
+	clang-format -i $(SRC) $(wildcard xteam_simulations_*.h)
+
 clean:
 	rm -rf $(BINARIES) out_*
 
@@ -82,6 +85,7 @@ help:
 	@echo "  all              Build for all configured compilers"
 	@echo "  <label>          Build for the given compiler (e.g. make aomp)"
 	@echo "  clean            Remove binaries and object files"
+	@echo "  format           Format the code using clang-format"
 	@echo ""
 	@echo "Variables:"
 	@echo "  CXX_<label>            Compiler path  (e.g. CXX_aomp=/path/to/clang++)"

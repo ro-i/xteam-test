@@ -69,7 +69,6 @@ public:
   virtual void reset_device() {};
   virtual void free_device() {};
 
-
   // Return descriptions and implementations for all supported reduction and
   // scan variants.  Return empty vectors if no variants are supported for the
   // given operation.  Be non-virtual to allow RedOp as a template parameter.
@@ -78,37 +77,49 @@ public:
   template <RedOp Op>
   std::vector<
       std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
-  get_all_reduce_variants() { return {}; }
+  get_all_reduce_variants() {
+    return {};
+  }
 
   // ... and reduce_dot.
   std::vector<std::pair<
       std::string,
       std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
-  get_all_reduce_dot_variants() { return {}; }
+  get_all_reduce_dot_variants() {
+    return {};
+  }
 
   // Get all supported versions of scan ...
   template <RedOp Op>
   std::vector<std::pair<
       std::string,
       std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_incl_variants() { return {}; }
+  get_all_scan_incl_variants() {
+    return {};
+  }
 
   template <RedOp Op>
   std::vector<std::pair<
       std::string,
       std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_excl_variants() { return {}; }
+  get_all_scan_excl_variants() {
+    return {};
+  }
 
   // ... and scan_dot.
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,
                                       T *__restrict, uint64_t)>>>
-  get_all_scan_dot_excl_variants() { return {}; }
+  get_all_scan_dot_excl_variants() {
+    return {};
+  }
 
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,
                                       T *__restrict, uint64_t)>>>
-  get_all_scan_dot_incl_variants() { return {}; }
+  get_all_scan_dot_incl_variants() {
+    return {};
+  }
 };
 
 // Base class for AOMP-based simulations
@@ -241,5 +252,4 @@ public:
 };
 
 // Base class for trunk-based simulations
-template <typename T> class SimulationTrunkBase : public Simulation<T> {
-};
+template <typename T> class SimulationTrunkBase : public Simulation<T> {};

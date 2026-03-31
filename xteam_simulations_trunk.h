@@ -37,8 +37,7 @@ int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
     void *Loc, void *GlobalBuffer, uint32_t num_of_records,
     uint64_t reduce_data_size, void *reduce_data,
     void (*shflFct)(void *, int16_t, int16_t, int16_t),
-    void (*cpyFct)(void *, int32_t),
-    void (*lgcpyFct)(void *, int, void *),
+    void (*cpyFct)(void *, int32_t), void (*lgcpyFct)(void *, int, void *),
     void (*lgredFct)(void *, int, void *),
     void (*glcpyFct)(void *, int, void *),
     void (*glredFct)(void *, int, void *));
@@ -49,16 +48,19 @@ uint32_t __kmpc_get_hardware_thread_id_in_block();
 }
 #else
 extern "C" {
-int32_t __kmpc_nvptx_parallel_reduce_nowait_v2(
-    void *, uint64_t, void *,
-    void (*)(void *, int16_t, int16_t, int16_t),
-    void (*)(void *, int32_t)) { return 0; }
+int32_t __kmpc_nvptx_parallel_reduce_nowait_v2(void *, uint64_t, void *,
+                                               void (*)(void *, int16_t,
+                                                        int16_t, int16_t),
+                                               void (*)(void *, int32_t)) {
+  return 0;
+}
 int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
     void *, void *, uint32_t, uint64_t, void *,
-    void (*)(void *, int16_t, int16_t, int16_t),
-    void (*)(void *, int32_t),
+    void (*)(void *, int16_t, int16_t, int16_t), void (*)(void *, int32_t),
     void (*)(void *, int, void *), void (*)(void *, int, void *),
-    void (*)(void *, int, void *), void (*)(void *, int, void *)) { return 0; }
+    void (*)(void *, int, void *), void (*)(void *, int, void *)) {
+  return 0;
+}
 int32_t __kmpc_shuffle_int32(int32_t, int16_t, int16_t) { return 0; }
 int64_t __kmpc_shuffle_int64(int64_t, int16_t, int16_t) { return 0; }
 void __kmpc_barrier_simple_spmd(void *, int32_t) {}
@@ -83,8 +85,8 @@ uint32_t __kmpc_get_hardware_thread_id_in_block() { return 0; }
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 // Shared-memory transfer medium for the inter-warp copy callback.
 // Mirrors __openmp_nvptx_data_transfer_temporary_storage from codegen.
-[[clang::loader_uninitialized]] static volatile __attribute__((address_space(3)))
-int32_t __trunk_sim_xfer[_TRUNK_WARP_SIZE];
+[[clang::loader_uninitialized]] static volatile __attribute__((
+    address_space(3))) int32_t __trunk_sim_xfer[_TRUNK_WARP_SIZE];
 #endif
 
 #define __trunk_sim_barrier() __kmpc_barrier_simple_spmd(nullptr, 0)
@@ -93,8 +95,7 @@ int32_t __trunk_sim_xfer[_TRUNK_WARP_SIZE];
 namespace trunk_sim {
 
 // --- shuffle helper (wraps __kmpc_shuffle_int{32,64}) --------------------
-template <typename T>
-static T shuffle(T val, int16_t offset) {
+template <typename T> static T shuffle(T val, int16_t offset) {
 #if defined(__AMDGCN__) || defined(__NVPTX__)
   if constexpr (sizeof(T) <= 4) {
     int32_t tmp;
@@ -121,8 +122,7 @@ static void shfl_reduce(void *rd, int16_t lid, int16_t off, int16_t av) {
   T *pp = *reinterpret_cast<T **>(rd);
   T remote = shuffle<T>(*pp, off);
 
-  bool do_reduce = (av == 0) ||
-                   (av == 1 && lid < off) ||
+  bool do_reduce = (av == 0) || (av == 1 && lid < off) ||
                    (av == 2 && (lid & 1) == 0 && off > 0);
   if (do_reduce)
     *pp = red_combine<T, Op>(*pp, remote);
@@ -135,8 +135,7 @@ static void shfl_reduce(void *rd, int16_t lid, int16_t off, int16_t av) {
 // Transfers each warp-master's value through shared memory so that warp 0
 // can perform the final cross-warp reduction.  Processes the value in
 // 4-byte chunks (matching codegen behaviour for types > 32 bits).
-template <typename T>
-static void warp_copy(void *rd, int32_t nw) {
+template <typename T> static void warp_copy(void *rd, int32_t nw) {
 #if defined(__AMDGCN__) || defined(__NVPTX__)
   uint32_t tid = __trunk_sim_tid();
   uint32_t lid = tid % _TRUNK_WARP_SIZE;
@@ -162,8 +161,7 @@ static void warp_copy(void *rd, int32_t nw) {
 
 // --- 3. _omp_reduction_list_to_global_copy_func (ListGlobalFnTy) ---------
 //   buf[idx] = *priv
-template <typename T>
-static void lg_copy(void *buf, int idx, void *rd) {
+template <typename T> static void lg_copy(void *buf, int idx, void *rd) {
   static_cast<T *>(buf)[idx] = **reinterpret_cast<T **>(rd);
 }
 
@@ -177,8 +175,7 @@ static void lg_reduce(void *buf, int idx, void *rd) {
 
 // --- 5. _omp_reduction_global_to_list_copy_func (ListGlobalFnTy) ---------
 //   *priv = buf[idx]
-template <typename T>
-static void gl_copy(void *buf, int idx, void *rd) {
+template <typename T> static void gl_copy(void *buf, int idx, void *rd) {
   **reinterpret_cast<T **>(rd) = static_cast<T *>(buf)[idx];
 }
 
@@ -209,265 +206,248 @@ static void gl_reduce(void *buf, int idx, void *rd) {
 // applies the final combine:  result = combine(result, priv).
 // =========================================================================
 
-template <typename T>
-class SimulationTrunk : public SimulationTrunkBase<T> {
+template <typename T> class SimulationTrunk : public SimulationTrunkBase<T> {
   void *d_gbuf = nullptr;
 
-// =========================================================================
-// GPU cross-team reduction kernels
-// =========================================================================
+  // =========================================================================
+  // GPU cross-team reduction kernels
+  // =========================================================================
 
-template <RedOp Op>
-T red_sim(const T *__restrict in, uint64_t n) {
-  const T rnv = red_identity<T, Op>();
-  T result = rnv;
-  void *gbuf = d_gbuf;
+  template <RedOp Op> T red_sim(const T *__restrict in, uint64_t n) {
+    const T rnv = red_identity<T, Op>();
+    T result = rnv;
+    void *gbuf = d_gbuf;
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom : result)                        \
-    is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    T team_priv = rnv;
+    num_threads(XTEAM_NUM_THREADS) map(tofrom : result) is_device_ptr(gbuf)    \
+    ompx_dyn_cgroup_mem(1)
+    for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+      T team_priv = rnv;
 
-    // Reduce after every single element (one per thread), matching the
-    // codegen's distribute pattern: each 512-element chunk triggers a
-    // full within-team parallel_reduce via warp shuffles + shared memory.
-    uint64_t trips =
-        (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
-    for (uint64_t iter = 0; iter < trips; iter++) {
-      uint64_t i = k + iter * XTEAM_TOTAL_NUM_THREADS;
-      T priv = (i < n) ? in[i] : rnv;
+      // Reduce after every single element (one per thread), matching the
+      // codegen's distribute pattern: each 512-element chunk triggers a
+      // full within-team parallel_reduce via warp shuffles + shared memory.
+      uint64_t trips =
+          (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
+      for (uint64_t iter = 0; iter < trips; iter++) {
+        uint64_t i = k + iter * XTEAM_TOTAL_NUM_THREADS;
+        T priv = (i < n) ? in[i] : rnv;
 
-      void *rl[1] = {&priv};
-      int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-          nullptr, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, Op>,
-          trunk_sim::warp_copy<T>);
+        void *rl[1] = {&priv};
+        int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
+            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, Op>,
+            trunk_sim::warp_copy<T>);
 
-      if (is_master)
-        team_priv = red_combine<T, Op>(team_priv, priv);
+        if (is_master)
+          team_priv = red_combine<T, Op>(team_priv, priv);
+      }
+
+      // Cross-team reduction on the accumulated team result (once, like
+      // codegen)
+      void *rl[1] = {&team_priv};
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+
+      if (winner == 1)
+        result = red_combine<T, Op>(result, team_priv);
     }
 
-    // Cross-team reduction on the accumulated team result (once, like codegen)
-    void *rl[1] = {&team_priv};
-    int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-        nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-        trunk_sim::shfl_reduce<T, Op>,
-        trunk_sim::warp_copy<T>,
-        trunk_sim::lg_copy<T>,
-        trunk_sim::lg_reduce<T, Op>,
-        trunk_sim::gl_copy<T>,
-        trunk_sim::gl_reduce<T, Op>);
-
-    if (winner == 1)
-      result = red_combine<T, Op>(result, team_priv);
+    return result;
   }
 
-  return result;
-}
-
-template <RedOp Op>
-T red_sim_v2(const T *__restrict in, uint64_t n) {
-  const T rnv = red_identity<T, Op>();
-  T result = rnv;
-  void *gbuf = d_gbuf;
+  template <RedOp Op> T red_sim_v2(const T *__restrict in, uint64_t n) {
+    const T rnv = red_identity<T, Op>();
+    T result = rnv;
+    void *gbuf = d_gbuf;
 
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom : result)                        \
-    is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    // -- user loop body (partial reduction per thread) --
-    T priv = rnv;
-    for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
-      priv = red_combine<T, Op>(priv, in[i]);
+    num_threads(XTEAM_NUM_THREADS) map(tofrom : result) is_device_ptr(gbuf)    \
+    ompx_dyn_cgroup_mem(1)
+    for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+      // -- user loop body (partial reduction per thread) --
+      T priv = rnv;
+      for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
+        priv = red_combine<T, Op>(priv, in[i]);
 
-    // -- codegen-emitted reduction sequence --
-    void *rl[1] = {&priv};
-
-    // Step 1: within-team (parallel) reduction
-    __kmpc_nvptx_parallel_reduce_nowait_v2(
-        nullptr, sizeof(T), rl,
-        trunk_sim::shfl_reduce<T, Op>,
-        trunk_sim::warp_copy<T>);
-
-    // Step 2: cross-team (teams) reduction
-    int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-        nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-        trunk_sim::shfl_reduce<T, Op>,
-        trunk_sim::warp_copy<T>,
-        trunk_sim::lg_copy<T>,
-        trunk_sim::lg_reduce<T, Op>,
-        trunk_sim::gl_copy<T>,
-        trunk_sim::gl_reduce<T, Op>);
-
-    // Step 3: finalization (winning thread writes result)
-    if (winner == 1)
-      result = red_combine<T, Op>(result, priv);
-  }
-
-  return result;
-}
-
-T red_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
-  const T rnv = red_identity<T, RedOp::Sum>();
-  T result = rnv;
-  void *gbuf = d_gbuf;
-
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) map(tofrom : result)                        \
-    is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
-  for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-    T team_priv = rnv;
-
-    uint64_t trips =
-        (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
-    for (uint64_t iter = 0; iter < trips; iter++) {
-      uint64_t i = k + iter * XTEAM_TOTAL_NUM_THREADS;
-      T priv = (i < n) ? a[i] * b[i] : rnv;
-
+      // -- codegen-emitted reduction sequence --
       void *rl[1] = {&priv};
-      int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-          nullptr, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::warp_copy<T>);
 
-      if (is_master)
-        team_priv += priv;
+      // Step 1: within-team (parallel) reduction
+      __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
+                                             trunk_sim::shfl_reduce<T, Op>,
+                                             trunk_sim::warp_copy<T>);
+
+      // Step 2: cross-team (teams) reduction
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+
+      // Step 3: finalization (winning thread writes result)
+      if (winner == 1)
+        result = red_combine<T, Op>(result, priv);
     }
 
-    void *rl[1] = {&team_priv};
-    int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-        nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-        trunk_sim::shfl_reduce<T, RedOp::Sum>,
-        trunk_sim::warp_copy<T>,
-        trunk_sim::lg_copy<T>,
-        trunk_sim::lg_reduce<T, RedOp::Sum>,
-        trunk_sim::gl_copy<T>,
-        trunk_sim::gl_reduce<T, RedOp::Sum>);
-
-    if (winner == 1)
-      result += team_priv;
+    return result;
   }
 
-  return result;
-}
-
-T red_dot_sim_v2(const T *__restrict a, const T *__restrict b, uint64_t n) {
+  T red_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
     const T rnv = red_identity<T, RedOp::Sum>();
     T result = rnv;
     void *gbuf = d_gbuf;
-  
-  #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-      num_threads(XTEAM_NUM_THREADS) map(tofrom : result)                        \
-      is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
+
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom : result) is_device_ptr(gbuf)    \
+    ompx_dyn_cgroup_mem(1)
+    for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
+      T team_priv = rnv;
+
+      uint64_t trips =
+          (n + XTEAM_TOTAL_NUM_THREADS - 1) / XTEAM_TOTAL_NUM_THREADS;
+      for (uint64_t iter = 0; iter < trips; iter++) {
+        uint64_t i = k + iter * XTEAM_TOTAL_NUM_THREADS;
+        T priv = (i < n) ? a[i] * b[i] : rnv;
+
+        void *rl[1] = {&priv};
+        int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
+            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
+            trunk_sim::warp_copy<T>);
+
+        if (is_master)
+          team_priv += priv;
+      }
+
+      void *rl[1] = {&team_priv};
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, RedOp::Sum>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, RedOp::Sum>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, RedOp::Sum>);
+
+      if (winner == 1)
+        result += team_priv;
+    }
+
+    return result;
+  }
+
+  T red_dot_sim_v2(const T *__restrict a, const T *__restrict b, uint64_t n) {
+    const T rnv = red_identity<T, RedOp::Sum>();
+    T result = rnv;
+    void *gbuf = d_gbuf;
+
+#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
+    num_threads(XTEAM_NUM_THREADS) map(tofrom : result) is_device_ptr(gbuf)    \
+    ompx_dyn_cgroup_mem(1)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
       T priv = rnv;
       for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
         priv += a[i] * b[i];
-  
+
       void *rl[1] = {&priv};
-  
+
       __kmpc_nvptx_parallel_reduce_nowait_v2(
-          nullptr, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, RedOp::Sum>,
+          nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
           trunk_sim::warp_copy<T>);
-  
+
       int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
           nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::warp_copy<T>,
-          trunk_sim::lg_copy<T>,
-          trunk_sim::lg_reduce<T, RedOp::Sum>,
-          trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, RedOp::Sum>);
-  
+          trunk_sim::shfl_reduce<T, RedOp::Sum>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, RedOp::Sum>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, RedOp::Sum>);
+
       if (winner == 1)
         result += priv;
     }
-  
+
     return result;
-  }  
+  }
 
 public:
-void init_device() override {
-  assert(d_gbuf == nullptr);
-  int dev = omp_get_default_device();
-  d_gbuf = omp_target_alloc(sizeof(T) * _TRUNK_NUM_RECORDS, dev);
-  if (!d_gbuf) {
-    std::cerr << "omp_target_alloc failed for global reduction buffer on device "
-              << dev << "\n";
-    abort();
+  void init_device() override {
+    assert(d_gbuf == nullptr);
+    int dev = omp_get_default_device();
+    d_gbuf = omp_target_alloc(sizeof(T) * _TRUNK_NUM_RECORDS, dev);
+    if (!d_gbuf) {
+      std::cerr
+          << "omp_target_alloc failed for global reduction buffer on device "
+          << dev << "\n";
+      abort();
+    }
   }
-}
 
-void reset_device() override {}
+  void reset_device() override {}
 
-void free_device() override {
-  assert(d_gbuf != nullptr);
-  omp_target_free(d_gbuf, omp_get_default_device());
-  d_gbuf = nullptr;
-}
+  void free_device() override {
+    assert(d_gbuf != nullptr);
+    omp_target_free(d_gbuf, omp_get_default_device());
+    d_gbuf = nullptr;
+  }
 
-template <RedOp Op>
-std::vector<
-    std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
-get_all_reduce_variants() {
-  return {
-      {red_op_to_str<Op>("red_{}_sim"),
-       [this](const T *__restrict in, uint64_t n) {
-         return this->template red_sim<Op>(in, n);
-       }},
-      {red_op_to_str<Op>("red_{}_sim_v2"),
-       [this](const T *__restrict in, uint64_t n) {
-         return this->template red_sim_v2<Op>(in, n);
-       }},
-  };
-}
+  template <RedOp Op>
+  std::vector<
+      std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
+  get_all_reduce_variants() {
+    return {
+        {red_op_to_str<Op>("red_{}_sim"),
+         [this](const T *__restrict in, uint64_t n) {
+           return this->template red_sim<Op>(in, n);
+         }},
+        {red_op_to_str<Op>("red_{}_sim_v2"),
+         [this](const T *__restrict in, uint64_t n) {
+           return this->template red_sim_v2<Op>(in, n);
+         }},
+    };
+  }
 
-std::vector<std::pair<
-    std::string,
-    std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
-get_all_reduce_dot_variants() {
-  return {
-      {"red_dot_sim",
-       [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-         return this->red_dot_sim(a, b, n);
-       }},
-      {"red_dot_sim_v2",
-       [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-         return this->red_dot_sim_v2(a, b, n);
-       }},
-  };
-}
+  std::vector<std::pair<
+      std::string,
+      std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
+  get_all_reduce_dot_variants() {
+    return {
+        {"red_dot_sim",
+         [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
+           return this->red_dot_sim(a, b, n);
+         }},
+        {"red_dot_sim_v2",
+         [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
+           return this->red_dot_sim_v2(a, b, n);
+         }},
+    };
+  }
 
-template <RedOp Op>
-std::vector<std::pair<
-    std::string,
-    std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-get_all_scan_incl_variants() {
-  return {};
-}
+  template <RedOp Op>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_incl_variants() {
+    return {};
+  }
 
-template <RedOp Op>
-std::vector<std::pair<
-    std::string,
-    std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-get_all_scan_excl_variants() {
-  return {};
-}
+  template <RedOp Op>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_excl_variants() {
+    return {};
+  }
 
-std::vector<std::pair<
-    std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                    T *__restrict, uint64_t)>>>
-get_all_scan_dot_incl_variants() {
-  return {};
-}
+  std::vector<std::pair<
+      std::string, std::function<void(const T *__restrict, const T *__restrict,
+                                      T *__restrict, uint64_t)>>>
+  get_all_scan_dot_incl_variants() {
+    return {};
+  }
 
-std::vector<std::pair<
-    std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                    T *__restrict, uint64_t)>>>
-get_all_scan_dot_excl_variants() {
-  return {};
-}
+  std::vector<std::pair<
+      std::string, std::function<void(const T *__restrict, const T *__restrict,
+                                      T *__restrict, uint64_t)>>>
+  get_all_scan_dot_excl_variants() {
+    return {};
+  }
 
 }; // class SimulationTrunk

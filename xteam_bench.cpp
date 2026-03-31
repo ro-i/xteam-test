@@ -19,7 +19,6 @@
 
 static Config conf;
 
-
 // =========================================================================
 // GPU cross-team reduction kernels
 // =========================================================================
@@ -211,7 +210,7 @@ void scan_dot_excl(const T *__restrict a, const T *__restrict b,
     s += a[i] * b[i];
   }
 }
-#else // defined(AOMP_DEV)
+#else  // defined(AOMP_DEV)
 template <typename T>
 void scan_sum_incl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
@@ -237,9 +236,9 @@ void scan_dot_excl(const T *__restrict a, const T *__restrict b,
 // =========================================================================
 
 template <typename T, bool is_fp, typename Kernel, typename... Inputs>
-std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
-                                           uint64_t n, const std::string &label,
-                                           Simulation<T> *sim, Inputs... inputs) {
+std::optional<TimingResult>
+run_bench_scan(Kernel kernel, T *out, const T *gold, uint64_t n,
+               const std::string &label, Simulation<T> *sim, Inputs... inputs) {
   std::vector<double> times(conf.bench_iters_scan);
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_scan; t++) {
     if (sim)
@@ -261,9 +260,9 @@ std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
 }
 
 template <typename T, bool is_fp, typename Kernel, typename... Inputs>
-std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
-                                             const std::string &label,
-                                             Simulation<T> *sim, Inputs... inputs) {
+std::optional<TimingResult>
+run_bench_reduce(Kernel kernel, T gold, uint64_t n, const std::string &label,
+                 Simulation<T> *sim, Inputs... inputs) {
   std::vector<double> times(conf.bench_iters_reduction);
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_reduction; t++) {
     if (sim)
@@ -319,46 +318,50 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.reduction) {
         // sum reduction
-        r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_sum, n, "red_sum", simulation, in1);
+        r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold_sum, n, "red_sum",
+                                       simulation, in1);
         print_result("red_sum", type_name, n, r);
         // max reduction
-        r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold_max, n, "red_max", simulation, in1);
+        r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold_max, n, "red_max",
+                                       simulation, in1);
         print_result("red_max", type_name, n, r);
         // min reduction
-        r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold_min, n, "red_min", simulation, in1);
+        r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold_min, n, "red_min",
+                                       simulation, in1);
         print_result("red_min", type_name, n, r);
         // dot reduction
-        r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_dot, n, "red_dot", simulation, in1, in2);
+        r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold_dot, n, "red_dot",
+                                       simulation, in1, in2);
         print_result("red_dot", type_name, n, r);
       }
 
       if (conf.reduction_simulation) {
         // sum reduction
         for (const auto &[name, func] :
-            simulation->template get_all_reduce_variants<RedOp::Sum>()) {
+             simulation->template get_all_reduce_variants<RedOp::Sum>()) {
           r = run_bench_reduce<T, is_fp>(func, gold_sum, n, name, simulation,
-                                        in1);
+                                         in1);
           print_result(name, type_name, n, r);
         }
         // max reduction
         for (const auto &[name, func] :
-            simulation->template get_all_reduce_variants<RedOp::Max>()) {
+             simulation->template get_all_reduce_variants<RedOp::Max>()) {
           r = run_bench_reduce<T, is_fp>(func, gold_max, n, name, simulation,
-                                        in1);
+                                         in1);
           print_result(name, type_name, n, r);
         }
         // min reduction
         for (const auto &[name, func] :
-            simulation->template get_all_reduce_variants<RedOp::Min>()) {
+             simulation->template get_all_reduce_variants<RedOp::Min>()) {
           r = run_bench_reduce<T, is_fp>(func, gold_min, n, name, simulation,
-                                        in1);
+                                         in1);
           print_result(name, type_name, n, r);
         }
         // dot reduction
         for (const auto &[name, func] :
-            simulation->get_all_reduce_dot_variants()) {
+             simulation->get_all_reduce_dot_variants()) {
           r = run_bench_reduce<T, is_fp>(func, gold_dot, n, name, simulation,
-                                        in1, in2);
+                                         in1, in2);
           print_result(name, type_name, n, r);
         }
       }
@@ -377,15 +380,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_sum_incl<T>, out, gold, n, "incl_sum",
-                                    simulation, in1);
+                                     simulation, in1);
         print_result("incl_sum", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->template get_all_scan_incl_variants<RedOp::Sum>()) {
+             simulation->template get_all_scan_incl_variants<RedOp::Sum>()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1);
+                                       in1);
           print_result(name, type_name, n, r);
         }
       }
@@ -397,15 +400,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_sum_excl<T>, out, gold, n, "excl_sum",
-                                    simulation, in1);
+                                     simulation, in1);
         print_result("excl_sum", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->template get_all_scan_excl_variants<RedOp::Sum>()) {
+             simulation->template get_all_scan_excl_variants<RedOp::Sum>()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1);
+                                       in1);
           print_result(name, type_name, n, r);
         }
       }
@@ -417,15 +420,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_max_incl<T>, out, gold, n, "incl_max",
-                                    simulation, in1);
+                                     simulation, in1);
         print_result("incl_max", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->template get_all_scan_incl_variants<RedOp::Max>()) {
+             simulation->template get_all_scan_incl_variants<RedOp::Max>()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1);
+                                       in1);
           print_result(name, type_name, n, r);
         }
       }
@@ -437,15 +440,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_max_excl<T>, out, gold, n, "excl_max",
-                                    simulation, in1);
+                                     simulation, in1);
         print_result("excl_max", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->template get_all_scan_excl_variants<RedOp::Max>()) {
+             simulation->template get_all_scan_excl_variants<RedOp::Max>()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1);
+                                       in1);
           print_result(name, type_name, n, r);
         }
       }
@@ -457,15 +460,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_min_incl<T>, out, gold, n, "incl_min",
-                                    simulation, in1);
+                                     simulation, in1);
         print_result("incl_min", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->template get_all_scan_incl_variants<RedOp::Min>()) {
+             simulation->template get_all_scan_incl_variants<RedOp::Min>()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1);
+                                       in1);
           print_result(name, type_name, n, r);
         }
       }
@@ -477,15 +480,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_min_excl<T>, out, gold, n, "excl_min",
-                                    simulation, in1);
+                                     simulation, in1);
         print_result("excl_min", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->template get_all_scan_excl_variants<RedOp::Min>()) {
+             simulation->template get_all_scan_excl_variants<RedOp::Min>()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1);
+                                       in1);
           print_result(name, type_name, n, r);
         }
       }
@@ -497,15 +500,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_dot_incl<T>, out, gold, n, "incl_dot",
-                                    simulation, in1, in2);
+                                     simulation, in1, in2);
         print_result("incl_dot", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->get_all_scan_dot_incl_variants()) {
+             simulation->get_all_scan_dot_incl_variants()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1, in2);
+                                       in1, in2);
           print_result(name, type_name, n, r);
         }
       }
@@ -517,15 +520,15 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_dot_excl<T>, out, gold, n, "excl_dot",
-                                    simulation, in1, in2);
+                                     simulation, in1, in2);
         print_result("excl_dot", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->get_all_scan_dot_excl_variants()) {
+             simulation->get_all_scan_dot_excl_variants()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                        in1, in2);
+                                       in1, in2);
           print_result(name, type_name, n, r);
         }
       }
@@ -540,11 +543,13 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
     free(out);
     simulation->free_device();
     delete simulation;
-    }
+  }
 }
 
 static void usage(const char *argv0) {
-  std::cout << "Usage: " << argv0 << " [-b <int>] [-B <int>] [-q] [-r] [-s] [-R] [-S] [-w <int>] [-h]\n";
+  std::cout
+      << "Usage: " << argv0
+      << " [-b <int>] [-B <int>] [-q] [-r] [-s] [-R] [-S] [-w <int>] [-h]\n";
   std::cout << "  -b N: Benchmark iterations for reduction\n";
   std::cout << "  -B N: Benchmark iterations for scan\n";
   std::cout << "  -q: Quick run (test only one array size)\n";
@@ -564,47 +569,48 @@ int main(int argc, char **argv) {
 
   while ((opt = getopt(argc, argv, "b:B:qrsRSw:h")) != -1) {
     switch (opt) {
-      case 'b':
-        conf.bench_iters_reduction = std::stoi(optarg);
-        break;
-      case 'B':
-        conf.bench_iters_scan = std::stoi(optarg);
-        break;
-      case 'q':
-        conf.quick_run = true;
-        break;
-      case 'r':
-        conf.reduction = true;
-        break;
-      case 's':
+    case 'b':
+      conf.bench_iters_reduction = std::stoi(optarg);
+      break;
+    case 'B':
+      conf.bench_iters_scan = std::stoi(optarg);
+      break;
+    case 'q':
+      conf.quick_run = true;
+      break;
+    case 'r':
+      conf.reduction = true;
+      break;
+    case 's':
 #ifdef AOMP_DEV
-        conf.scan = true;
+      conf.scan = true;
 #endif
-        if (!conf.scan)
-          std::cerr << "warning: scan codegen unsupported on this compiler\n";
-        break;
-      case 'R':
-        conf.reduction_simulation = true;
-        break;
-      case 'S':
+      if (!conf.scan)
+        std::cerr << "warning: scan codegen unsupported on this compiler\n";
+      break;
+    case 'R':
+      conf.reduction_simulation = true;
+      break;
+    case 'S':
 #ifndef TRUNK
-        conf.scan_simulation = true;
+      conf.scan_simulation = true;
 #endif
-        if (!conf.scan_simulation)
-          std::cerr << "warning: scan simulations unsupported on this compiler\n";
-        break;
-      case 'w':
-        conf.warmup_iters = std::stoi(optarg);
-        break;
-      case 'h':
-        usage(argv[0]);
-        return EXIT_SUCCESS;
-      default:
-        usage(argv[0]);
-        return EXIT_FAILURE;
+      if (!conf.scan_simulation)
+        std::cerr << "warning: scan simulations unsupported on this compiler\n";
+      break;
+    case 'w':
+      conf.warmup_iters = std::stoi(optarg);
+      break;
+    case 'h':
+      usage(argv[0]);
+      return EXIT_SUCCESS;
+    default:
+      usage(argv[0]);
+      return EXIT_FAILURE;
     }
   }
-  if (!conf.reduction && !conf.scan && !conf.reduction_simulation && !conf.scan_simulation) {
+  if (!conf.reduction && !conf.scan && !conf.reduction_simulation &&
+      !conf.scan_simulation) {
     std::cerr << "error: at least one of -r, -s, -R, -S must be specified\n";
     usage(argv[0]);
     return EXIT_FAILURE;
@@ -616,29 +622,29 @@ int main(int argc, char **argv) {
     conf.array_sizes.assign(array_sizes.begin(), array_sizes.end());
 
   std::cout << std::format(
-    "xteam benchmark (quick run: {}) — {} warmup, {} timed "
-    "iterations "
-    "(reduction), {} timed iterations (scan), "
-    "{} teams, {} threads, codegen autodetection: {}\n",
-    conf.quick_run ? "true" : "false", conf.warmup_iters,
-    conf.bench_iters_reduction, conf.bench_iters_scan, XTEAM_NUM_TEAMS,
-    XTEAM_NUM_THREADS, CODEGEN_AUTODETECTION ? "true" : "false");
+      "xteam benchmark (quick run: {}) — {} warmup, {} timed "
+      "iterations "
+      "(reduction), {} timed iterations (scan), "
+      "{} teams, {} threads, codegen autodetection: {}\n",
+      conf.quick_run ? "true" : "false", conf.warmup_iters,
+      conf.bench_iters_reduction, conf.bench_iters_scan, XTEAM_NUM_TEAMS,
+      XTEAM_NUM_THREADS, CODEGEN_AUTODETECTION ? "true" : "false");
 
-std::cout << "Array sizes: ";
-for (uint64_t sz : conf.array_sizes)
-  std::cout << std::format(" {}", sz);
-std::cout << "\n\n";
+  std::cout << "Array sizes: ";
+  for (uint64_t sz : conf.array_sizes)
+    std::cout << std::format(" {}", sz);
+  std::cout << "\n\n";
 
-print_header();
+  print_header();
 
-std::cout << "\n--- int ---\n";
-run_type<int, false>("int");
+  std::cout << "\n--- int ---\n";
+  run_type<int, false>("int");
 
-std::cout << "\n--- long ---\n";
-run_type<long, false>("long");
+  std::cout << "\n--- long ---\n";
+  run_type<long, false>("long");
 
-std::cout << "\n--- double ---\n";
-run_type<double, true>("double");
+  std::cout << "\n--- double ---\n";
+  run_type<double, true>("double");
 
-return EXIT_SUCCESS;
+  return EXIT_SUCCESS;
 }
