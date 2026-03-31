@@ -284,7 +284,7 @@ class SimulationAOMP : public SimulationAOMPBase<T> {
   T *d_storage = nullptr;
 
 template <RedOp Op>
-T reduce_sim(const T *__restrict in, uint64_t n) {
+T red_sim(const T *__restrict in, uint64_t n) {
   const T rnv = red_identity<T, Op>();
   T s = rnv;
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -303,7 +303,7 @@ T reduce_sim(const T *__restrict in, uint64_t n) {
   return s;
 }
 
-T reduce_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
+T red_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
   const T rnv = red_identity<T, RedOp::Sum>();
   T s = rnv;
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
@@ -405,7 +405,7 @@ void scan_excl_sim(const T *__restrict in, T *__restrict out, uint64_t n) {
   }
 }
 
-void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
+void scan_dot_incl_sim(const T *__restrict a, const T *__restrict b,
                        T *__restrict out, uint64_t n) {
   const T rnv = red_identity<T, RedOp::Sum>();
   const uint64_t stride =
@@ -443,7 +443,7 @@ void scan_incl_dot_sim(const T *__restrict a, const T *__restrict b,
   }
 }
 
-void scan_excl_dot_sim(const T *__restrict a, const T *__restrict b,
+void scan_dot_excl_sim(const T *__restrict a, const T *__restrict b,
                        T *__restrict out, uint64_t n) {
   const T rnv = red_identity<T, RedOp::Sum>();
   const uint64_t stride =
@@ -516,9 +516,9 @@ std::vector<
     std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
 get_all_reduce_variants() {
   return {
-      {red_op_to_str<Op>("reduce_sim"),
+      {red_op_to_str<Op>("red_{}_sim"),
        [this](const T *__restrict in, uint64_t n) {
-         return this->template reduce_sim<Op>(in, n);
+         return this->template red_sim<Op>(in, n);
        }},
   };
 }
@@ -528,9 +528,9 @@ std::vector<std::pair<
     std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
 get_all_reduce_dot_variants() {
   return {
-      {"reduce_dot_sim",
+      {"red_dot_sim",
        [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-         return this->reduce_dot_sim(a, b, n);
+         return this->red_dot_sim(a, b, n);
        }},
   };
 }
@@ -541,7 +541,7 @@ std::vector<std::pair<
     std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
 get_all_scan_incl_variants() {
   return {
-      {red_op_to_str<Op>("scan_incl_sim"),
+      {red_op_to_str<Op>("scan_{}_incl_sim"),
        [this](const T *__restrict in, T *__restrict out, uint64_t n) {
          return this->template scan_incl_sim<Op>(in, out, n);
        }},
@@ -554,7 +554,7 @@ std::vector<std::pair<
     std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
 get_all_scan_excl_variants() {
   return {
-      {red_op_to_str<Op>("scan_excl_sim"),
+      {red_op_to_str<Op>("scan_{}_excl_sim"),
        [this](const T *__restrict in, T *__restrict out, uint64_t n) {
          return this->template scan_excl_sim<Op>(in, out, n);
        }},
@@ -564,22 +564,22 @@ get_all_scan_excl_variants() {
 std::vector<std::pair<
     std::string, std::function<void(const T *__restrict, const T *__restrict,
                                     T *__restrict, uint64_t)>>>
-get_all_scan_incl_dot_variants() {
+get_all_scan_dot_incl_variants() {
   return {
-      {"scan_incl_dot_sim",
+      {"scan_dot_incl_sim",
        [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-              uint64_t n) { return this->scan_incl_dot_sim(a, b, out, n); }},
+              uint64_t n) { return this->scan_dot_incl_sim(a, b, out, n); }},
   };
 }
 
 std::vector<std::pair<
     std::string, std::function<void(const T *__restrict, const T *__restrict,
                                     T *__restrict, uint64_t)>>>
-get_all_scan_excl_dot_variants() {
+get_all_scan_dot_excl_variants() {
   return {
-      {"scan_excl_dot_sim",
+      {"scan_dot_excl_sim",
        [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-              uint64_t n) { return this->scan_excl_dot_sim(a, b, out, n); }},
+              uint64_t n) { return this->scan_dot_excl_sim(a, b, out, n); }},
   };
 }
 

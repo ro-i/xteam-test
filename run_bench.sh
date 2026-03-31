@@ -146,33 +146,33 @@ for label in "${labels[@]}"; do
 done
 echo
 
-# Collect all test lines from round 1 of the first label to get the test list
-first_file="$results_dir/${labels[0]}_round1.txt"
-if [[ ! -f "$first_file" ]]; then
-  echo "No results found in $first_file" >&2
-  exit 1
-fi
+# Collect and form a set of all test lines from round 1 of all labels to get the
+# test list.
+# (Not all labels might have the same tests, so we need to collect all test
+# lines from all labels.)
+mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${labels[@]}")
+test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9]+' "${round1_files[@]}" | sort -Vu)
 
 # Extract data lines (skip headers, blanks, and section markers)
-grep -oE '^\s*(red|excl|incl)_\S+\s+\S+\s+[0-9]+' "$first_file" | while read -r test_name type_name n_val; do
+echo "$test_spec" | while read -r test_name type_name n_val; do
   printf "%-24s %-8s %10s" "$test_name" "$type_name" "$n_val"
 
   for label in "${labels[@]}"; do
     unset best_mbps avg_mbps
 
-    mapfile -t file_list < <(printf "${results_dir}/${label}_round%d.txt\n" $(seq 1 $rounds))
+    mapfile -t file_list < <(printf "${results_dir}/${label}_round%d.txt\n" $(seq 1 "$rounds"))
     mapfile -t best_mbps_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}")
     mapfile -t avg_mbps_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}")
 
     if [[ ${#best_mbps_list[@]} -gt 0 ]]; then
-      if [[ ! " ${best_mbps_list[@]} " =~ " FAIL " ]]; then
+      if [[ ! " ${best_mbps_list[*]} " =~ " FAIL " ]]; then
         best_mbps=$(printf "%s\n" "${best_mbps_list[@]}" | sort -rn | head -1)
       else
         best_mbps="FAIL"
       fi
     fi
     if [[ ${#avg_mbps_list[@]} -gt 0 ]]; then
-      if [[ ! " ${avg_mbps_list[@]} " =~ " FAIL " ]]; then
+      if [[ ! " ${avg_mbps_list[*]} " =~ " FAIL " ]]; then
         avg_mbps=0
         for mbps in "${avg_mbps_list[@]}"; do
           avg_mbps=$(echo "$avg_mbps + $mbps" | bc -l)

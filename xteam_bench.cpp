@@ -83,7 +83,7 @@ T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 
 #ifdef AOMP_DEV
 template <typename T>
-void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
+void scan_sum_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, + : s)
@@ -99,7 +99,7 @@ void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
+void scan_sum_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, + : s)
@@ -115,7 +115,7 @@ void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
+void scan_max_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = red_identity<T, RedOp::Max>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, max : m)
@@ -131,7 +131,7 @@ void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
+void scan_max_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = red_identity<T, RedOp::Max>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, max : m)
@@ -147,7 +147,7 @@ void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
+void scan_min_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = red_identity<T, RedOp::Min>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, min : m)
@@ -163,7 +163,7 @@ void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
+void scan_min_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = red_identity<T, RedOp::Min>();
 #if CODEGEN_AUTODETECTION
 #pragma omp target teams distribute parallel for reduction(inscan, min : m)
@@ -179,7 +179,7 @@ void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_incl_dot(const T *__restrict a, const T *__restrict b,
+void scan_dot_incl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
@@ -196,7 +196,7 @@ void scan_incl_dot(const T *__restrict a, const T *__restrict b,
 }
 
 template <typename T>
-void scan_excl_dot(const T *__restrict a, const T *__restrict b,
+void scan_dot_excl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
 #if CODEGEN_AUTODETECTION
@@ -213,22 +213,22 @@ void scan_excl_dot(const T *__restrict a, const T *__restrict b,
 }
 #else // defined(AOMP_DEV)
 template <typename T>
-void scan_incl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {}
+void scan_sum_incl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_excl_sum(const T *__restrict in, T *__restrict out, uint64_t n) {}
+void scan_sum_excl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_incl_max(const T *__restrict in, T *__restrict out, uint64_t n) {}
+void scan_max_incl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_excl_max(const T *__restrict in, T *__restrict out, uint64_t n) {}
+void scan_max_excl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_incl_min(const T *__restrict in, T *__restrict out, uint64_t n) {}
+void scan_min_incl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_excl_min(const T *__restrict in, T *__restrict out, uint64_t n) {}
+void scan_min_excl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_incl_dot(const T *__restrict a, const T *__restrict b,
+void scan_dot_incl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_excl_dot(const T *__restrict a, const T *__restrict b,
+void scan_dot_excl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {}
 #endif // defined(AOMP_DEV)
 
@@ -376,7 +376,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_inclusive_sum(in1, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_incl_sum<T>, out, gold, n, "incl_sum",
+        r = run_bench_scan<T, is_fp>(scan_sum_incl<T>, out, gold, n, "incl_sum",
                                     simulation, in1);
         print_result("incl_sum", type_name, n, r);
       }
@@ -396,7 +396,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_exclusive_sum(in1, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_excl_sum<T>, out, gold, n, "excl_sum",
+        r = run_bench_scan<T, is_fp>(scan_sum_excl<T>, out, gold, n, "excl_sum",
                                     simulation, in1);
         print_result("excl_sum", type_name, n, r);
       }
@@ -416,7 +416,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_inclusive_max(in1, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_incl_max<T>, out, gold, n, "incl_max",
+        r = run_bench_scan<T, is_fp>(scan_max_incl<T>, out, gold, n, "incl_max",
                                     simulation, in1);
         print_result("incl_max", type_name, n, r);
       }
@@ -436,7 +436,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_exclusive_max(in1, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_excl_max<T>, out, gold, n, "excl_max",
+        r = run_bench_scan<T, is_fp>(scan_max_excl<T>, out, gold, n, "excl_max",
                                     simulation, in1);
         print_result("excl_max", type_name, n, r);
       }
@@ -456,7 +456,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_inclusive_min(in1, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_incl_min<T>, out, gold, n, "incl_min",
+        r = run_bench_scan<T, is_fp>(scan_min_incl<T>, out, gold, n, "incl_min",
                                     simulation, in1);
         print_result("incl_min", type_name, n, r);
       }
@@ -476,7 +476,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_exclusive_min(in1, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_excl_min<T>, out, gold, n, "excl_min",
+        r = run_bench_scan<T, is_fp>(scan_min_excl<T>, out, gold, n, "excl_min",
                                     simulation, in1);
         print_result("excl_min", type_name, n, r);
       }
@@ -496,14 +496,14 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_inclusive_dot(in1, in2, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_incl_dot<T>, out, gold, n, "incl_dot",
+        r = run_bench_scan<T, is_fp>(scan_dot_incl<T>, out, gold, n, "incl_dot",
                                     simulation, in1, in2);
         print_result("incl_dot", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->get_all_scan_incl_dot_variants()) {
+            simulation->get_all_scan_dot_incl_variants()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
                                         in1, in2);
           print_result(name, type_name, n, r);
@@ -516,14 +516,14 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       gold_exclusive_dot(in1, in2, gold, n);
 
       if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_excl_dot<T>, out, gold, n, "excl_dot",
+        r = run_bench_scan<T, is_fp>(scan_dot_excl<T>, out, gold, n, "excl_dot",
                                     simulation, in1, in2);
         print_result("excl_dot", type_name, n, r);
       }
 
       if (conf.scan_simulation) {
         for (const auto &[name, func] :
-            simulation->get_all_scan_excl_dot_variants()) {
+            simulation->get_all_scan_dot_excl_variants()) {
           r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
                                         in1, in2);
           print_result(name, type_name, n, r);

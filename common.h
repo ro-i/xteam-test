@@ -73,13 +73,13 @@ template <typename T, RedOp Op> constexpr T red_combine(T a, T b) {
 }
 
 template <RedOp Op>
-std::string red_op_to_str(const std::string &prefix) {
+std::string red_op_to_str(const std::string_view prefix) {
   if constexpr (Op == RedOp::Sum)
-    return prefix + "_sum";
+    return std::vformat(prefix, std::make_format_args("sum"));
   else if constexpr (Op == RedOp::Max)
-    return prefix + "_max";
+    return std::vformat(prefix, std::make_format_args("max"));
   else if constexpr (Op == RedOp::Min)
-    return prefix + "_min";
+    return std::vformat(prefix, std::make_format_args("min"));
   else
     static_assert(false, "Unsupported red op");
 }

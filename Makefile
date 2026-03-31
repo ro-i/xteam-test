@@ -4,7 +4,7 @@
 OFFLOAD_ARCH ?= gfx90a
 
 # ── Common flags ────────────────────────────────────────────────────────────
-COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -std=c++20 -save-temps
+COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -std=c++20 -save-temps=obj
 COMMON_DEFS  =
 
 SRC = xteam_bench.cpp
@@ -60,7 +60,9 @@ all: $(BINARIES)
 define COMPILER_RULE
 xteam_bench_$(1): $(SRC) xteam_simulations_$(1).h
 	@test -n "$$(CXX_$(1))" || { echo "ERROR: CXX_$(1) is not set"; exit 1; }
-	$$(CXX_$(1)) $$(DEFS_$(1)) $$(FLAGS_$(1)) -o $$@ $(SRC)
+	mkdir -p out_$(1)
+	cd out_$(1) && $$(CXX_$(1)) $$(DEFS_$(1)) $$(FLAGS_$(1)) -o $$@ $(addprefix ../,$(SRC)) && cp $$@ ..
+	cd out_$(1) && $$(dir $$(CXX_$(1)))llvm-dis *.bc
 endef
 $(foreach L,$(LABELS),$(eval $(call COMPILER_RULE,$(L))))
 
@@ -71,14 +73,15 @@ endef
 $(foreach L,$(LABELS),$(eval $(call PLAIN_LABEL_RULE,$(L))))
 
 clean:
-	rm -f $(BINARIES) *.bc *.ii *.img *.ll *.o *.out *.resolution.txt *.s *.tmp
+	rm -rf $(BINARIES) out_*
 
 help:
 	@echo "xteam benchmark"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all              Build all configured compilers"
-	@echo "  clean            Remove binaries and results"
+	@echo "  all              Build for all configured compilers"
+	@echo "  <label>          Build for the given compiler (e.g. make aomp)"
+	@echo "  clean            Remove binaries and object files"
 	@echo ""
 	@echo "Variables:"
 	@echo "  CXX_<label>            Compiler path  (e.g. CXX_aomp=/path/to/clang++)"

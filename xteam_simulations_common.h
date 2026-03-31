@@ -103,12 +103,12 @@ public:
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,
                                       T *__restrict, uint64_t)>>>
-  get_all_scan_excl_dot_variants() { return {}; }
+  get_all_scan_dot_excl_variants() { return {}; }
 
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,
                                       T *__restrict, uint64_t)>>>
-  get_all_scan_incl_dot_variants() { return {}; }
+  get_all_scan_dot_incl_variants() { return {}; }
 };
 
 // Base class for AOMP-based simulations
