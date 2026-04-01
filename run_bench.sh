@@ -128,7 +128,7 @@ if [[ $collect_only -eq 0 ]]; then
   for (( round=1; round<=rounds; round++ )); do
     echo "━━━ Round $round / $rounds ━━━"
 
-    for i in $(seq 0 $(( ${#binaries[@]} - 1 ))); do
+    for (( i=0; i<${#binaries[@]}; i++ )); do
       bin="${binaries[$i]}"
       label="${labels[$i]}"
       outfile="$results_dir/${label}_round${round}.txt"

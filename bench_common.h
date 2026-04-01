@@ -174,15 +174,18 @@ inline bool check_single(T computed, T gold, const std::string &label,
     return false;
   }
   double g = (double)gold, c = (double)computed;
-  double rel = (g != 0.0) ? std::abs((c - g) / g) : std::abs(c - g);
-  if (rel <= 1e-6)
+  double abs_err = std::abs(c - g);
+  double scale = std::max({1.0, std::abs(g), std::abs(c)});
+  double rel = abs_err / scale;
+  if (abs_err <= 1e-12 || rel <= 1e-6)
     return true;
   if (index)
-    std::cerr << std::format("FAIL {} at {}: got {}, expected {} (rel={})\n",
-                             label, *index, c, g, rel);
+    std::cerr << std::format(
+        "FAIL {} at {}: got {}, expected {} (abs={}, rel={})\n", label, *index,
+        c, g, abs_err, rel);
   else
-    std::cerr << std::format("FAIL {}: got {}, expected {} (rel={})\n", label,
-                             c, g, rel);
+    std::cerr << std::format("FAIL {}: got {}, expected {} (abs={}, rel={})\n",
+                             label, c, g, abs_err, rel);
   return false;
 }
 
@@ -197,12 +200,17 @@ bool check(const T *computed, const T *gold, uint64_t n,
 }
 
 inline TimingResult create_timing_result(const std::vector<double> &times,
-                                         uint64_t n, uint64_t data_bytes) {
+                                         uint64_t data_bytes) {
+  if (times.empty()) {
+    std::cerr << "internal error: no timing samples collected\n";
+    return TimingResult{0.0, 0.0, 0.0, 0.0, 0.0};
+  }
   auto [mn, mx] = std::minmax_element(times.begin(), times.end());
   double avg =
       std::accumulate(times.begin(), times.end(), 0.0) / (double)(times.size());
-  return TimingResult{*mn, *mx, avg, 1e-6 * data_bytes / *mn,
-                      1e-6 * data_bytes / avg};
+  double best_mbps = (*mn > 0.0) ? (1e-6 * data_bytes / *mn) : 0.0;
+  double avg_mbps = (avg > 0.0) ? (1e-6 * data_bytes / avg) : 0.0;
+  return TimingResult{*mn, *mx, avg, best_mbps, avg_mbps};
 }
 
 inline void print_result(const std::string &test, const std::string &type,

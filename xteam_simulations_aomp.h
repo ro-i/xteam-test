@@ -451,7 +451,11 @@ public:
     d_storage = target_alloc<T>(2 * XTEAM_TOTAL_NUM_THREADS + 1, devid);
   }
 
-  void reset_device() {}
+  void reset_device() {
+    if (!d_td)
+      return;
+    omp_target_memset(d_td, 0, sizeof(uint32_t), omp_get_default_device());
+  }
 
   void free_device() {
     assert(d_td != nullptr);

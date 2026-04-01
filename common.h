@@ -46,17 +46,28 @@ struct Config {
 };
 
 template <typename T> T *alloc(uint64_t n) {
-  if (int r = n % ALIGNMENT)
-    n += ALIGNMENT - r;
-  T *ret = static_cast<T *>(aligned_alloc(ALIGNMENT, sizeof(T) * n));
+  if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    std::cerr << std::format("alloc size overflow n={} sizeof(T)={}\n", n,
+                             sizeof(T));
+    exit(EXIT_FAILURE);
+  }
+  size_t bytes = sizeof(T) * n;
+  bytes = ((bytes + ALIGNMENT - 1) / ALIGNMENT) * ALIGNMENT;
+
+  T *ret = static_cast<T *>(aligned_alloc(ALIGNMENT, bytes));
   if (!ret) {
-    std::cerr << std::format("aligned_alloc failed n={}\n", n);
+    std::cerr << std::format("aligned_alloc failed bytes={}\n", bytes);
     exit(EXIT_FAILURE);
   }
   return ret;
 }
 
 template <typename T> T *target_alloc(uint64_t n, int devid) {
+  if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    std::cerr << std::format("target_alloc size overflow n={} sizeof(T)={}\n",
+                             n, sizeof(T));
+    exit(EXIT_FAILURE);
+  }
   T *ret = static_cast<T *>(omp_target_alloc(sizeof(T) * n, devid));
   if (!ret) {
     std::cerr << std::format("omp_target_alloc failed n={} devid={}\n", n,

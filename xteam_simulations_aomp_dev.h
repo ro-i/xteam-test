@@ -344,10 +344,11 @@ public:
 
   void reset_device() {
     int devid = omp_get_default_device();
-    if (d_status) {
+    if (d_td)
+      omp_target_memset(d_td, 0, sizeof(uint32_t), devid);
+    if (d_status)
       omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
                         devid);
-    }
   }
 
   void free_device() {

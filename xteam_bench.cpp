@@ -261,7 +261,7 @@ std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
       return std::nullopt;
   }
 
-  return create_timing_result(times, n, sizeof(T) * n * sizeof...(Inputs));
+  return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
 }
 
 template <typename T, bool is_fp, SimulationLike Sim, typename Kernel,
@@ -285,7 +285,7 @@ std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
       return std::nullopt;
   }
 
-  return create_timing_result(times, n, sizeof(T) * n * sizeof...(Inputs));
+  return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
 }
 
 // =========================================================================
