@@ -51,6 +51,17 @@ usage() {
   echo "  -R: Run reduction simulations (default: $reduction_simulation)"
   echo "  -S: Run scan simulations (default: $scan_simulation)"
   echo "  -w N: Warmup iterations (default: $warmup_iters)"
+  echo
+  echo "Note that at least one of -r, -s, -R, -S must be specified."
+  echo
+  echo "Pseudocode of how the benchmark binaries run the tests:"
+  echo "  for each data type in alphabetical order (e.g. double, int, long):"
+  echo "    for each array size in numerical order:"
+  echo "      for each test type in alphabetical order (first all reductions, then all scans):"
+  echo "        for each warmup iteration:"
+  echo "          run the test and check the result against the gold result"
+  echo "        for each timed benchmark iteration:"
+  echo "          run the test and check the result against the gold result"
 }
 
 while getopts "cn:o:b:B:qrsRSw:h" opt; do

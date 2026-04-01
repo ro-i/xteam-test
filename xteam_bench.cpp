@@ -583,6 +583,18 @@ static void usage(const char *argv0) {
   std::cout << "  -h: Show this help message\n";
   std::cout
       << "\nNote that at least one of -r, -s, -R, -S must be specified.\n";
+  std::cout << "\nPseudocode of how the benchmark binaries run the tests:\n";
+  std::cout << "  for each data type in alphabetical order (e.g. double, int, "
+               "long):\n";
+  std::cout << "    for each array size in numerical order:\n";
+  std::cout << "      for each test type in alphabetical order (first all "
+               "reductions, then all scans):\n";
+  std::cout << "        for each warmup iteration:\n";
+  std::cout << "          run the test and check the result against the gold "
+               "result\n";
+  std::cout << "        for each timed benchmark iteration:\n";
+  std::cout << "          run the test and check the result against the gold "
+               "result\n";
 }
 
 // =========================================================================
