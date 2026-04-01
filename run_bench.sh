@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# run_bench.sh — Run xteam benchmarks interleaved across compilers
+# Copyright © Advanced Micro Devices, Inc., or its affiliates.
+# SPDX-License-Identifier:  MIT
+
+# run_bench.sh — Run xteam benchmarks across compilers
 #
 # Usage:
 #   ./run_bench.sh -r aomp_dev aomp trunk [...]
-#   ./run_bench.sh -n 5 -o results aomp_dev aomp trunk [...]
+#   ./run_bench.sh -rRq -n5 -o results aomp_dev aomp trunk [...]
 #
-# Each binary is run rounds times.  Within each round the binaries execute
-# in shuffled order so that transient machine load affects all compilers
-# equally rather than penalising whichever runs last.
+# The binaries can be run $rounds times in a round-robin way so that changing
+# machine load is distributed as evenly as possible. (Only matters for shared
+# machines.)
 #
 # Results are stored in results/<label>_round<N>.txt and a combined summary
 # is printed at the end.
@@ -19,7 +22,7 @@ set -euo pipefail
 binary_prefix=xteam_bench_
 
 collect_only=0
-rounds=5
+rounds=1
 results_dir=results
 # Options passed to binaries
 bench_iters_reduction=1000
@@ -34,8 +37,8 @@ warmup_iters=2
 # ── Parse options ───────────────────────────────────────────────────────────
 usage() {
   echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-B N] [-q] [-r] [-s] [-R] [-S] [-w N] [-h] compiler_labels..."
-  echo "  -c: Only collect results, don't run any tests"
-  echo "  -n rounds: Number of rounds to run (default: $rounds)"
+  echo "  -c: Only collect results for the given number of rounds and the given labels, don't run any tests"
+  echo "  -n rounds: Number of rounds to run for each label (default: $rounds)"
   echo "  -o results_dir: Results directory (default: $results_dir)"
   echo "  -h: Show this help message"
   echo
@@ -70,7 +73,7 @@ while getopts "cn:o:b:B:qrsRSw:h" opt; do
 done
 shift $((OPTIND - 1))
 
-if [[ $reduction -eq 0 && $scan -eq 0 && $reduction_simulation -eq 0 && $scan_simulation -eq 0 ]]; then
+if [[ $collect_only -eq 0 && $reduction -eq 0 && $scan -eq 0 && $reduction_simulation -eq 0 && $scan_simulation -eq 0 ]]; then
   echo "Error: at least one of -r, -s, -R, -S must be specified" >&2
   usage; exit 1
 fi
@@ -79,48 +82,44 @@ labels=("$@")
 if [[ ${#labels[@]} -eq 0 ]]; then
   usage; exit 1
 fi
-# Derive binary names from labels (add xteam_bench_ prefix if not present)
+# Derive binary names from labels (add xteam_bench_ prefix)
 binaries=()
 for label in "${labels[@]}"; do
   binaries+=("$binary_prefix$label")
 done
 
-# Build the arguments for the binaries
-args=()
-args+=("-b" "$bench_iters_reduction")
-args+=("-B" "$bench_iters_scan")
-[[ $quick_run -eq 1 ]] && args+=("-q")
-[[ $reduction -eq 1 ]] && args+=("-r")
-[[ $scan -eq 1 ]] && args+=("-s")
-[[ $reduction_simulation -eq 1 ]] && args+=("-R")
-[[ $scan_simulation -eq 1 ]] && args+=("-S")
-args+=("-w" "$warmup_iters")
-
-mkdir -p "$results_dir"
-
-echo "═════════════════════════════════════════════════════════════════════"
-echo "xteam benchmark — interleaved runner"
-echo "═════════════════════════════════════════════════════════════════════"
-echo "Binaries:      ${binaries[*]}"
-echo "Labels:        ${labels[*]}"
-echo "Arguments:     ${args[*]}"
-echo "Rounds:        $rounds"
-echo "Collect only:  $collect_only"
-echo "Results:       $results_dir/"
-echo "═════════════════════════════════════════════════════════════════════"
-echo
-
 # ── Run rounds ──────────────────────────────────────────────────────────────
 if [[ $collect_only -eq 0 ]]; then
+  # Build the arguments for the binaries
+  args=()
+  args+=("-b" "$bench_iters_reduction")
+  args+=("-B" "$bench_iters_scan")
+  [[ $quick_run -eq 1 ]] && args+=("-q")
+  [[ $reduction -eq 1 ]] && args+=("-r")
+  [[ $scan -eq 1 ]] && args+=("-s")
+  [[ $reduction_simulation -eq 1 ]] && args+=("-R")
+  [[ $scan_simulation -eq 1 ]] && args+=("-S")
+  args+=("-w" "$warmup_iters")
+
+  mkdir -p "$results_dir"
+
+  echo "═════════════════════════════════════════════════════════════════════"
+  echo "xteam benchmark — round-robin runner"
+  echo "═════════════════════════════════════════════════════════════════════"
+  echo "Binaries:      ${binaries[*]}"
+  echo "Labels:        ${labels[*]}"
+  echo "Arguments:     ${args[*]}"
+  echo "Rounds:        $rounds"
+  echo "Results:       $results_dir/"
+  echo "═════════════════════════════════════════════════════════════════════"
+  echo
+
   for (( round=1; round<=rounds; round++ )); do
     echo "━━━ Round $round / $rounds ━━━"
 
-    # Create a shuffled index array for this round
-    indices=($(seq 0 $(( ${#binaries[@]} - 1 )) | shuf))
-
-    for idx in "${indices[@]}"; do
-      bin="${binaries[$idx]}"
-      label="${labels[$idx]}"
+    for i in $(seq 0 $(( ${#binaries[@]} - 1 ))); do
+      bin="${binaries[$i]}"
+      label="${labels[$i]}"
       outfile="$results_dir/${label}_round${round}.txt"
 
       echo "  Running $label (round $round)..."
@@ -151,7 +150,7 @@ echo
 # (Not all labels might have the same tests, so we need to collect all test
 # lines from all labels.)
 mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${labels[@]}")
-test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9]+' "${round1_files[@]}" | sort -Vu)
+test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
 
 # Extract data lines (skip headers, blanks, and section markers)
 echo "$test_spec" | while read -r test_name type_name n_val; do

@@ -1,4 +1,6 @@
 # xteam benchmark — multi-compiler Makefile
+# Copyright © Advanced Micro Devices, Inc., or its affiliates.
+# SPDX-License-Identifier:  MIT
 
 # ── GPU target ──────────────────────────────────────────────────────────────
 OFFLOAD_ARCH ?= gfx90a

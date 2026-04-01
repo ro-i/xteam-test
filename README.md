@@ -1,5 +1,9 @@
 The code in this repository tests and compares implementations of OpenMP cross-team reductions and scans across different compilers for correctness and performance.
-The tests don't only include high-level tests using the corresponding OpenMP pragmas, but also simulations that don't depend on the reduction/scan-specific codegen and allow to target the OpenMP device runtime implementation more specifically.
+The tests include
+- high-level tests using the corresponding OpenMP pragmas
+- simulations that don't depend on the reduction/scan-specific codegen and
+  - allow to target the OpenMP device runtime implementation more specifically
+  - verify if performance issues are rather runtime- or codegen-related
 
 Each compiler is defined and implemented by
 - a label identifying the compiler, e.g. "aomp" for AOMP or "trunk" for LLVM upstream
