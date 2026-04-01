@@ -1,3 +1,7 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 #pragma once
 
 #include <cstdint>
@@ -6,6 +10,8 @@
 #include <iostream>
 #include <limits>
 #include <vector>
+
+#include "omp.h"
 
 #ifndef XTEAM_NUM_THREADS
 #define XTEAM_NUM_THREADS 512
@@ -16,6 +22,10 @@
 // If true, let codegen for reduction/scan determine num_teams and num_threads.
 #ifndef CODEGEN_AUTODETECTION
 #define CODEGEN_AUTODETECTION 0
+#endif
+// If true, use no-loop scan codegen.
+#ifndef NOLOOP
+#define NOLOOP 0
 #endif
 
 // default alignment for aligned_alloc
@@ -36,9 +46,21 @@ struct Config {
 };
 
 template <typename T> T *alloc(uint64_t n) {
+  if (int r = n % ALIGNMENT)
+    n += ALIGNMENT - r;
   T *ret = static_cast<T *>(aligned_alloc(ALIGNMENT, sizeof(T) * n));
   if (!ret) {
     std::cerr << std::format("aligned_alloc failed n={}\n", n);
+    exit(EXIT_FAILURE);
+  }
+  return ret;
+}
+
+template <typename T> T *target_alloc(uint64_t n, int devid) {
+  T *ret = static_cast<T *>(omp_target_alloc(sizeof(T) * n, devid));
+  if (!ret) {
+    std::cerr << std::format("omp_target_alloc failed n={} devid={}\n", n,
+                             devid);
     exit(EXIT_FAILURE);
   }
   return ret;
@@ -58,7 +80,7 @@ template <typename T, RedOp Op> constexpr T red_identity() {
   else if constexpr (Op == RedOp::Min)
     return std::numeric_limits<T>::max();
   else
-    static_assert(false, "Unsupported red op");
+    static_assert(!std::is_same_v<T, T>, "Unsupported red op");
 }
 
 template <typename T, RedOp Op> constexpr T red_combine(T a, T b) {
@@ -69,11 +91,10 @@ template <typename T, RedOp Op> constexpr T red_combine(T a, T b) {
   else if constexpr (Op == RedOp::Min)
     return std::min(a, b);
   else
-    static_assert(false, "Unsupported red op");
+    static_assert(!std::is_same_v<T, T>, "Unsupported red op");
 }
 
-template <RedOp Op>
-std::string red_op_to_str(const std::string_view prefix) {
+template <RedOp Op> std::string red_op_to_str(const std::string_view prefix) {
   if constexpr (Op == RedOp::Sum)
     return std::vformat(prefix, std::make_format_args("sum"));
   else if constexpr (Op == RedOp::Max)
@@ -81,5 +102,5 @@ std::string red_op_to_str(const std::string_view prefix) {
   else if constexpr (Op == RedOp::Min)
     return std::vformat(prefix, std::make_format_args("min"));
   else
-    static_assert(false, "Unsupported red op");
+    static_assert(!std::is_same_v<RedOp, RedOp>, "Unsupported red op");
 }

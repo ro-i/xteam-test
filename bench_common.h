@@ -1,3 +1,7 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 #pragma once
 
 #include <algorithm>
@@ -39,7 +43,7 @@ static const std::array<uint64_t, 14> array_sizes{
     81920, 1000000, 4194304, 23445657, 41943040, 100000000, 177777777};
 #endif // NOLOOP
 
-using Clock = std::chrono::high_resolution_clock;
+using Clock = std::chrono::steady_clock;
 
 struct TimingResult {
   double min_s, max_s, avg_s;
@@ -183,7 +187,8 @@ inline bool check_single(T computed, T gold, const std::string &label,
 }
 
 template <typename T, bool is_fp>
-bool check(const T *computed, const T *gold, uint64_t n, const std::string &label) {
+bool check(const T *computed, const T *gold, uint64_t n,
+           const std::string &label) {
   for (uint64_t i = 0; i < n; i++) {
     if (!check_single<T, is_fp>(computed[i], gold[i], label, i))
       return false;
@@ -200,8 +205,8 @@ inline TimingResult create_timing_result(const std::vector<double> &times,
                       1e-6 * data_bytes / avg};
 }
 
-inline void print_result(const std::string &test, const std::string &type, uint64_t n,
-                         const std::optional<TimingResult> &r) {
+inline void print_result(const std::string &test, const std::string &type,
+                         uint64_t n, const std::optional<TimingResult> &r) {
   if (!r) {
     std::cerr << std::format("{:<24} {:<8} {:>10}  FAIL\n", test, type, n);
     return;

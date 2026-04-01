@@ -1,7 +1,12 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 #pragma once
 
 #include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -54,20 +59,26 @@ _REDUCTION_FUNC_ALL(min, {})
 #endif
 
 // =========================================================================
-// Simulation base class
+// Simulation concept — compile-time contract for simulation types
 // =========================================================================
-template <typename T> class Simulation {
-public:
-  virtual ~Simulation() = default;
-  Simulation() = default;
-  Simulation(const Simulation &) = delete;
-  Simulation &operator=(const Simulation &) = delete;
-  Simulation(Simulation &&) = delete;
-  Simulation &operator=(Simulation &&) = delete;
+struct SimulationTag {};
 
-  virtual void init_device() {};
-  virtual void reset_device() {};
-  virtual void free_device() {};
+template <typename S>
+concept SimulationLike = std::derived_from<S, SimulationTag> && requires(S s) {
+  { s.init_device() } -> std::same_as<void>;
+  { s.reset_device() } -> std::same_as<void>;
+  { s.free_device() } -> std::same_as<void>;
+};
+
+// =========================================================================
+// Base class providing default (no-op) implementations.
+// Derived classes hide the methods they wish to override.
+// =========================================================================
+template <typename T> class SimulationBase : public SimulationTag {
+public:
+  void init_device() {}
+  void reset_device() {}
+  void free_device() {}
 
   // Return descriptions and implementations for all supported reduction and
   // scan variants.  Return empty vectors if no variants are supported for the
@@ -122,8 +133,8 @@ public:
   }
 };
 
-// Base class for AOMP-based simulations
-template <typename T> class SimulationAOMPBase : public Simulation<T> {
+// Intermediate base for AOMP-based simulations
+template <typename T> class SimulationAOMPBase : public SimulationBase<T> {
 public:
   static constexpr void (*get_rfun_sum_func())(T *, T) {
     if constexpr (std::is_same_v<T, double>)
@@ -139,7 +150,7 @@ public:
     else if constexpr (std::is_same_v<T, unsigned long>)
       return __kmpc_rfun_sum_ul;
     else
-      static_assert(false, "Unsupported type");
+      static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
   static constexpr void (*get_rfun_max_func())(T *, T) {
@@ -156,7 +167,7 @@ public:
     else if constexpr (std::is_same_v<T, unsigned long>)
       return __kmpc_rfun_max_ul;
     else
-      static_assert(false, "Unsupported type");
+      static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
   static constexpr void (*get_rfun_min_func())(T *, T) {
@@ -173,7 +184,7 @@ public:
     else if constexpr (std::is_same_v<T, unsigned long>)
       return __kmpc_rfun_min_ul;
     else
-      static_assert(false, "Unsupported type");
+      static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
   static constexpr void (*get_rfun_sum_lds_func())(_RF_LDS T *, _RF_LDS T *) {
@@ -190,7 +201,7 @@ public:
     else if constexpr (std::is_same_v<T, unsigned long>)
       return __kmpc_rfun_sum_lds_ul;
     else
-      static_assert(false, "Unsupported type");
+      static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
   static constexpr void (*get_rfun_max_lds_func())(_RF_LDS T *, _RF_LDS T *) {
@@ -207,7 +218,7 @@ public:
     else if constexpr (std::is_same_v<T, unsigned long>)
       return __kmpc_rfun_max_lds_ul;
     else
-      static_assert(false, "Unsupported type");
+      static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
   static constexpr void (*get_rfun_min_lds_func())(_RF_LDS T *, _RF_LDS T *) {
@@ -224,7 +235,7 @@ public:
     else if constexpr (std::is_same_v<T, unsigned long>)
       return __kmpc_rfun_min_lds_ul;
     else
-      static_assert(false, "Unsupported type");
+      static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
   template <RedOp Op> static constexpr void (*get_rfun_func())(T *, T) {
@@ -235,7 +246,7 @@ public:
     else if constexpr (Op == RedOp::Min)
       return get_rfun_min_func();
     else
-      static_assert(false, "Unsupported scan op");
+      static_assert(!std::is_same_v<T, T>, "Unsupported scan op");
   }
 
   template <RedOp Op>
@@ -247,9 +258,12 @@ public:
     else if constexpr (Op == RedOp::Min)
       return get_rfun_min_lds_func();
     else
-      static_assert(false, "Unsupported scan op");
+      static_assert(!std::is_same_v<T, T>, "Unsupported scan op");
   }
 };
 
-// Base class for trunk-based simulations
-template <typename T> class SimulationTrunkBase : public Simulation<T> {};
+// Intermediate base for trunk-based simulations
+template <typename T> class SimulationTrunkBase : public SimulationBase<T> {};
+
+// No-op simulation used when no specific backend is selected.
+template <typename T> class SimulationNoop : public SimulationBase<T> {};

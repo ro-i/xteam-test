@@ -8,6 +8,7 @@ COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -lstdc++ -latomic -st
 COMMON_DEFS  =
 
 SRC = xteam_bench.cpp
+COMMON_HEADERS = xteam_simulations_common.h common.h bench_common.h
 
 # ── Compiler configurations ─────────────────────────────────────────────────
 # Define as many CXX_<label> variables as you need.  Each one will produce
@@ -58,7 +59,7 @@ all: $(BINARIES)
 
 # Pattern rule: xteam_bench_<label> from xteam_bench.cpp
 define COMPILER_RULE
-xteam_bench_$(1): $(SRC) xteam_simulations_$(1).h
+xteam_bench_$(1): $(SRC) xteam_simulations_$(1).h $(COMMON_HEADERS)
 	@test -n "$$(CXX_$(1))" || { echo "ERROR: CXX_$(1) is not set"; exit 1; }
 	mkdir -p out_$(1)
 	cd out_$(1) && $$(CXX_$(1)) $$(DEFS_$(1)) $$(FLAGS_$(1)) -o $$@ $(addprefix ../,$(SRC)) && cp $$@ ..
@@ -73,7 +74,7 @@ endef
 $(foreach L,$(LABELS),$(eval $(call PLAIN_LABEL_RULE,$(L))))
 
 format:
-	clang-format -i $(SRC) $(wildcard xteam_simulations_*.h)
+	clang-format -i $(SRC) $(wildcard xteam_simulations_*.h) $(COMMON_HEADERS)
 
 clean:
 	rm -rf $(BINARIES) out_*

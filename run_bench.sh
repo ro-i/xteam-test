@@ -87,14 +87,14 @@ done
 
 # Build the arguments for the binaries
 args=()
-args+=("-b $bench_iters_reduction")
-args+=("-B $bench_iters_scan")
+args+=("-b" "$bench_iters_reduction")
+args+=("-B" "$bench_iters_scan")
 [[ $quick_run -eq 1 ]] && args+=("-q")
 [[ $reduction -eq 1 ]] && args+=("-r")
 [[ $scan -eq 1 ]] && args+=("-s")
 [[ $reduction_simulation -eq 1 ]] && args+=("-R")
 [[ $scan_simulation -eq 1 ]] && args+=("-S")
-args+=("-w $warmup_iters")
+args+=("-w" "$warmup_iters")
 
 mkdir -p "$results_dir"
 

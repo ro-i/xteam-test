@@ -1,3 +1,7 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 // xteam_bench.cpp — OpenMP cross-team performance & correctness benchmark
 
 #include <unistd.h>
@@ -235,10 +239,11 @@ void scan_dot_excl(const T *__restrict a, const T *__restrict b,
 // Benchmark harness (OMP-specific run functions)
 // =========================================================================
 
-template <typename T, bool is_fp, typename Kernel, typename... Inputs>
-std::optional<TimingResult>
-run_bench_scan(Kernel kernel, T *out, const T *gold, uint64_t n,
-               const std::string &label, Simulation<T> *sim, Inputs... inputs) {
+template <typename T, bool is_fp, SimulationLike Sim, typename Kernel,
+          typename... Inputs>
+std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
+                                           uint64_t n, const std::string &label,
+                                           Sim *sim, Inputs... inputs) {
   std::vector<double> times(conf.bench_iters_scan);
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_scan; t++) {
     if (sim)
@@ -259,10 +264,11 @@ run_bench_scan(Kernel kernel, T *out, const T *gold, uint64_t n,
   return create_timing_result(times, n, sizeof(T) * n * sizeof...(Inputs));
 }
 
-template <typename T, bool is_fp, typename Kernel, typename... Inputs>
-std::optional<TimingResult>
-run_bench_reduce(Kernel kernel, T gold, uint64_t n, const std::string &label,
-                 Simulation<T> *sim, Inputs... inputs) {
+template <typename T, bool is_fp, SimulationLike Sim, typename Kernel,
+          typename... Inputs>
+std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
+                                             const std::string &label, Sim *sim,
+                                             Inputs... inputs) {
   std::vector<double> times(conf.bench_iters_reduction);
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_reduction; t++) {
     if (sim)
@@ -305,7 +311,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 #elif defined(AOMP_DEV)
     SimulationAOMPDev<T> *simulation = new SimulationAOMPDev<T>();
 #else
-    Simulation<T> *simulation = new Simulation<T>();
+    SimulationNoop<T> *simulation = new SimulationNoop<T>();
 #endif
     simulation->init_device();
 
@@ -369,7 +375,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
 
     if (conf.scan || conf.scan_simulation) {
       // Cross-team scans (codegen + simulations)
-      T *gold = static_cast<T *>(malloc(sizeof(T) * n));
+      T *gold = alloc<T>(n);
 
       simulation->reset_device();
 

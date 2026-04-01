@@ -1,3 +1,7 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 #pragma once
 
 #include <cassert>
@@ -94,7 +98,7 @@ template <typename T> constexpr xteamr_fn_t<T> get_kmpc_xteamr_func() {
   } else if constexpr (std::is_same_v<T, unsigned long>) {
     return __kmpc_xteamr_ul;
   } else {
-    static_assert(false, "Unsupported type");
+    static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 }
 
@@ -115,7 +119,7 @@ constexpr void (*get_kmpc_xteams_func())(T, T *, uint32_t *, T *, T *,
   } else if constexpr (std::is_same_v<T, unsigned long>) {
     return __kmpc_xteams_ul;
   } else {
-    static_assert(false, "Unsupported type");
+    static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 }
 
@@ -414,40 +418,35 @@ template <typename T> class SimulationAOMPDev : public SimulationAOMPBase<T> {
   }
 
 public:
-  void init_device() override {
+  void init_device() {
     assert(d_status == nullptr && d_td == nullptr);
-    int devid = 0;
+    int devid = omp_get_default_device();
 
     // Reduction state
-    d_td = static_cast<uint32_t *>(omp_target_alloc(sizeof(uint32_t), devid));
-    d_team_vals =
-        static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
+    d_td = target_alloc<uint32_t>(1, devid);
+    d_team_vals = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
     omp_target_memset(d_td, 0, sizeof(uint32_t), devid);
 
     // Scan state
-    d_status = static_cast<uint32_t *>(
-        omp_target_alloc(sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1), devid));
-    d_aggregates =
-        static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
-    d_prefixes =
-        static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
-    d_scan_out = static_cast<T *>(
-        omp_target_alloc(sizeof(T) * XTEAM_TOTAL_NUM_THREADS, devid));
+    d_status = target_alloc<uint32_t>(XTEAM_NUM_TEAMS + 1, devid);
+    d_aggregates = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
+    d_prefixes = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
+    d_scan_out = target_alloc<T>(XTEAM_TOTAL_NUM_THREADS, devid);
     omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
                       devid);
   }
 
-  void reset_device() override {
-    int devid = 0;
+  void reset_device() {
+    int devid = omp_get_default_device();
     if (d_status) {
       omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
                         devid);
     }
   }
 
-  void free_device() override {
+  void free_device() {
     assert(d_status != nullptr && d_td != nullptr);
-    int devid = 0;
+    int devid = omp_get_default_device();
 
     // Reduction state
     omp_target_free(d_td, devid);

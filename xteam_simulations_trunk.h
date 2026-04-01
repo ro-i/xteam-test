@@ -1,3 +1,7 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 #pragma once
 
 #include <cassert>
@@ -368,21 +372,15 @@ template <typename T> class SimulationTrunk : public SimulationTrunkBase<T> {
   }
 
 public:
-  void init_device() override {
+  void init_device() {
     assert(d_gbuf == nullptr);
-    int dev = omp_get_default_device();
-    d_gbuf = omp_target_alloc(sizeof(T) * _TRUNK_NUM_RECORDS, dev);
-    if (!d_gbuf) {
-      std::cerr
-          << "omp_target_alloc failed for global reduction buffer on device "
-          << dev << "\n";
-      abort();
-    }
+    int devid = omp_get_default_device();
+    d_gbuf = target_alloc<T>(_TRUNK_NUM_RECORDS, devid);
   }
 
-  void reset_device() override {}
+  void reset_device() {}
 
-  void free_device() override {
+  void free_device() {
     assert(d_gbuf != nullptr);
     omp_target_free(d_gbuf, omp_get_default_device());
     d_gbuf = nullptr;

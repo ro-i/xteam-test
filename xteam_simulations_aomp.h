@@ -1,3 +1,7 @@
+// Copyright © Advanced Micro Devices, Inc., or its affiliates.
+//
+// SPDX-License-Identifier:  MIT
+
 #pragma once
 
 #include "common.h"
@@ -178,7 +182,7 @@ using xteams_phase2_fn_t = void (*)(T *, int, T *, T *, void (*)(T *, T),
   else if constexpr (std::is_same_v<T, unsigned long>)                         \
     return __kmpc_xteamr_ul##SUFFIX;                                           \
   else                                                                         \
-    static_assert(false, "Unsupported type");
+    static_assert(!std::is_same_v<T, T>, "Unsupported type");
 
 #define _XTEAMS_GETTER_BODY(SUFFIX)                                            \
   if constexpr (std::is_same_v<T, double>)                                     \
@@ -194,7 +198,7 @@ using xteams_phase2_fn_t = void (*)(T *, int, T *, T *, void (*)(T *, T),
   else if constexpr (std::is_same_v<T, unsigned long>)                         \
     return __kmpc_xteams_ul##SUFFIX;                                           \
   else                                                                         \
-    static_assert(false, "Unsupported type");
+    static_assert(!std::is_same_v<T, T>, "Unsupported type");
 
 #define _XTEAMS_P2_GETTER_BODY(SUFFIX)                                         \
   if constexpr (std::is_same_v<T, double>)                                     \
@@ -206,7 +210,8 @@ using xteams_phase2_fn_t = void (*)(T *, int, T *, T *, void (*)(T *, T),
   else if constexpr (std::is_same_v<T, long>)                                  \
     return __kmpc_xteams_phase2_l##SUFFIX;                                     \
   else                                                                         \
-    static_assert(false, "Phase2: unsupported type (only d/f/i/l)");
+    static_assert(!std::is_same_v<T, T>,                                       \
+                  "Phase2: unsupported type (only d/f/i/l)");
 
 // Reduction getter — only _16x64 (wave64) and _32x32 (wave32) exist
 template <typename T> xteamr_fn_t<T> get_kmpc_xteamr_func() {
@@ -231,7 +236,7 @@ template <typename T> xteams_fn_t<T> get_kmpc_xteams_func() {
 #elif XTEAM_NUM_THREADS == 64
     _XTEAMS_GETTER_BODY(_1x64)
 #else
-    static_assert(false, "Unsupported number of threads");
+    static_assert(!std::is_same_v<T, T>, "Unsupported number of threads");
 #endif
   } else {
 #if XTEAM_NUM_THREADS == 1024
@@ -245,7 +250,7 @@ template <typename T> xteams_fn_t<T> get_kmpc_xteams_func() {
 #elif XTEAM_NUM_THREADS == 64
     _XTEAMS_GETTER_BODY(_2x32)
 #else
-    static_assert(false, "Unsupported number of threads");
+    static_assert(!std::is_same_v<T, T>, "Unsupported number of threads");
 #endif
   }
 }
@@ -260,7 +265,7 @@ template <typename T> xteams_phase2_fn_t<T> get_kmpc_xteams_phase2_func() {
 #elif XTEAM_NUM_THREADS == 256
     _XTEAMS_P2_GETTER_BODY(_4x64)
 #else
-    static_assert(false, "Unsupported number of threads");
+    static_assert(!std::is_same_v<T, T>, "Unsupported number of threads");
 #endif
   } else {
 #if XTEAM_NUM_THREADS == 1024
@@ -270,7 +275,7 @@ template <typename T> xteams_phase2_fn_t<T> get_kmpc_xteams_phase2_func() {
 #elif XTEAM_NUM_THREADS == 256
     _XTEAMS_P2_GETTER_BODY(_8x32)
 #else
-    static_assert(false, "Unsupported number of threads");
+    static_assert(!std::is_same_v<T, T>, "Unsupported number of threads");
 #endif
   }
 }
@@ -479,26 +484,21 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
   }
 
 public:
-  void init_device() override {
+  void init_device() {
     assert(d_td == nullptr);
-    int devid = 0;
-    static uint32_t zero = 0;
+    int devid = omp_get_default_device();
 
-    d_td = static_cast<uint32_t *>(omp_target_alloc(sizeof(uint32_t), devid));
-    d_team_vals =
-        static_cast<T *>(omp_target_alloc(sizeof(T) * XTEAM_NUM_TEAMS, devid));
-    omp_target_memcpy(d_td, &zero, sizeof(uint32_t), 0, 0, devid,
-                      omp_get_initial_device());
-
-    d_storage = static_cast<T *>(
-        omp_target_alloc(sizeof(T) * (2 * XTEAM_TOTAL_NUM_THREADS + 1), devid));
+    d_td = target_alloc<uint32_t>(1, devid);
+    omp_target_memset(d_td, 0, sizeof(uint32_t), devid);
+    d_team_vals = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
+    d_storage = target_alloc<T>(2 * XTEAM_TOTAL_NUM_THREADS + 1, devid);
   }
 
-  void reset_device() override {}
+  void reset_device() {}
 
-  void free_device() override {
+  void free_device() {
     assert(d_td != nullptr);
-    int devid = 0;
+    int devid = omp_get_default_device();
 
     omp_target_free(d_td, devid);
     d_td = nullptr;
