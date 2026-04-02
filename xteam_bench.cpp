@@ -24,60 +24,92 @@
 static Config conf;
 
 // =========================================================================
-// GPU cross-team reduction kernels
+// GPU cross-team reduction kernels where the AOMP codegen patterns match.
+// (Excluding min since it doesn't offer more insight than max.)
+// We don't use red_combine here to make sure we're not confusing AOMP's pattern
+// matching.
 // =========================================================================
 
-template <typename T> T reduce_sum(const T *__restrict in, uint64_t n) {
+template <typename T> T red_sum(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(+ : s)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(+ : s)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : s)
   for (uint64_t i = 0; i < n; i++)
     s += in[i];
   return s;
 }
 
-template <typename T> T reduce_max(const T *__restrict in, uint64_t n) {
+template <typename T> T red_max(const T *__restrict in, uint64_t n) {
   T m = red_identity<T, RedOp::Max>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(max : m)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(max : m)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        max : m)
   for (uint64_t i = 0; i < n; i++)
     m = std::max(m, in[i]);
   return m;
 }
 
-template <typename T> T reduce_min(const T *__restrict in, uint64_t n) {
-  T m = red_identity<T, RedOp::Min>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(min : m)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(min : m)
-#endif
-  for (uint64_t i = 0; i < n; i++)
-    m = std::min(m, in[i]);
-  return m;
-}
-
 template <typename T>
-T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
+T red_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(+ : s)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(+ : s)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : s)
   for (uint64_t i = 0; i < n; i++)
     s += a[i] * b[i];
   return s;
+}
+
+// Reduction as part of a larger kernel that is doing additional work beyond
+// that reduction.
+template <typename T> T red_sum_max(const T *__restrict in, uint64_t n) {
+  T s = red_identity<T, RedOp::Sum>();
+  T m = red_identity<T, RedOp::Max>();
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        + : s) reduction(max : m)
+  for (uint64_t i = 0; i < n; i++) {
+    s += in[i];
+    m = std::max(m, in[i]);
+  }
+  return static_cast<T>(static_cast<uint64_t>(s) | static_cast<uint64_t>(m));
+}
+
+// =========================================================================
+// GPU cross-team reduction kernels where the AOMP codegen doesn't pattern match
+// the fast path.
+// =========================================================================
+
+// Multiplication isn't detected by AOMP's pattern matching.
+template <typename T> T red_mult(const T *__restrict in, uint64_t n) {
+  T m = red_identity<T, RedOp::Mult>();
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(* : m)
+  for (uint64_t i = 0; i < n; i++)
+    m *= in[i];
+  return m;
+}
+
+// Non-standard sum isn't detected by AOMP's pattern matching.
+template <typename T> T red_sum_indirect(const T *__restrict in, uint64_t n) {
+  T s = red_identity<T, RedOp::Sum>();
+  auto accumulate = [](T a, T b) { return a + b; };
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : s)
+  for (uint64_t i = 0; i < n; i++)
+    s = accumulate(s, in[i]);
+  return s;
+}
+
+template <typename T>
+T red_sum_max_separate(const T *__restrict in, uint64_t n) {
+  T s = red_identity<T, RedOp::Sum>();
+  T m = red_identity<T, RedOp::Max>();
+#pragma omp target map(tofrom : s, m)
+#pragma omp teams TEAMS reduction(+ : s) reduction(max : m)
+  {
+#pragma omp distribute parallel for THREADS reduction(+ : s)
+    for (uint64_t i = 0; i < n; i++)
+      s += in[i];
+
+#pragma omp distribute parallel for THREADS reduction(max : m)
+    for (uint64_t i = 0; i < n; i++)
+      m = std::max(m, in[i]);
+  }
+  return static_cast<T>(static_cast<uint64_t>(s) | static_cast<uint64_t>(m));
 }
 
 // =========================================================================
@@ -88,12 +120,8 @@ T reduce_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 template <typename T>
 void scan_sum_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, + : s)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        inscan, + : s)
   for (uint64_t i = 0; i < n; i++) {
     s += in[i];
 #pragma omp scan inclusive(s)
@@ -104,12 +132,8 @@ void scan_sum_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_sum_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, + : s)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        inscan, + : s)
   for (uint64_t i = 0; i < n; i++) {
     out[i] = s;
 #pragma omp scan exclusive(s)
@@ -120,12 +144,8 @@ void scan_sum_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_max_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = red_identity<T, RedOp::Max>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, max : m)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, max : m)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        inscan, max : m)
   for (uint64_t i = 0; i < n; i++) {
     m = std::max(m, in[i]);
 #pragma omp scan inclusive(m)
@@ -136,12 +156,8 @@ void scan_max_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
 template <typename T>
 void scan_max_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
   T m = red_identity<T, RedOp::Max>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, max : m)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, max : m)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        inscan, max : m)
   for (uint64_t i = 0; i < n; i++) {
     out[i] = m;
 #pragma omp scan exclusive(m)
@@ -150,47 +166,11 @@ void scan_max_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
 }
 
 template <typename T>
-void scan_min_incl(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T m = red_identity<T, RedOp::Min>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, min : m)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, min : m)
-#endif
-  for (uint64_t i = 0; i < n; i++) {
-    m = std::min(m, in[i]);
-#pragma omp scan inclusive(m)
-    out[i] = m;
-  }
-}
-
-template <typename T>
-void scan_min_excl(const T *__restrict in, T *__restrict out, uint64_t n) {
-  T m = red_identity<T, RedOp::Min>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, min : m)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, min : m)
-#endif
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = m;
-#pragma omp scan exclusive(m)
-    m = std::min(m, in[i]);
-  }
-}
-
-template <typename T>
 void scan_dot_incl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, + : s)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        inscan, + : s)
   for (uint64_t i = 0; i < n; i++) {
     s += a[i] * b[i];
 #pragma omp scan inclusive(s)
@@ -202,12 +182,8 @@ template <typename T>
 void scan_dot_excl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
-#if CODEGEN_AUTODETECTION
-#pragma omp target teams distribute parallel for reduction(inscan, + : s)
-#else
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) reduction(inscan, + : s)
-#endif
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        inscan, + : s)
   for (uint64_t i = 0; i < n; i++) {
     out[i] = s;
 #pragma omp scan exclusive(s)
@@ -224,10 +200,6 @@ void scan_max_incl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
 void scan_max_excl(const T *__restrict in, T *__restrict out, uint64_t n) {}
 template <typename T>
-void scan_min_incl(const T *__restrict in, T *__restrict out, uint64_t n) {}
-template <typename T>
-void scan_min_excl(const T *__restrict in, T *__restrict out, uint64_t n) {}
-template <typename T>
 void scan_dot_incl(const T *__restrict a, const T *__restrict b,
                    T *__restrict out, uint64_t n) {}
 template <typename T>
@@ -239,10 +211,10 @@ void scan_dot_excl(const T *__restrict a, const T *__restrict b,
 // Benchmark harness (OMP-specific run functions)
 // =========================================================================
 
-template <typename T, bool is_fp, SimulationLike Sim, typename Kernel,
+template <typename T, bool is_fp, SimulationLike<T> Sim, typename Kernel,
           typename... Inputs>
 std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
-                                           uint64_t n, const std::string &label,
+                                           uint64_t n, std::string_view label,
                                            Sim *sim, Inputs... inputs) {
   std::vector<double> times(conf.bench_iters_scan);
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_scan; t++) {
@@ -251,11 +223,8 @@ std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
     auto t1 = Clock::now();
     kernel(inputs..., out, n);
     auto t2 = Clock::now();
-    if (t >= conf.warmup_iters) {
-      times[t - conf.warmup_iters] =
-          std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1)
-              .count();
-    }
+    if (t >= conf.warmup_iters)
+      times[t - conf.warmup_iters] = duration_cast(t2 - t1).count();
 #pragma omp target update from(out[0 : n])
     if (!check<T, is_fp>(out, gold, n, label))
       return std::nullopt;
@@ -264,11 +233,11 @@ std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
   return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
 }
 
-template <typename T, bool is_fp, SimulationLike Sim, typename Kernel,
+template <typename T, bool is_fp, SimulationLike<T> Sim, typename Kernel,
           typename... Inputs>
-std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
-                                             const std::string &label, Sim *sim,
-                                             Inputs... inputs) {
+std::optional<TimingResult> run_bench_red(Kernel kernel, T gold, uint64_t n,
+                                          std::string_view label, Sim *sim,
+                                          Inputs... inputs) {
   std::vector<double> times(conf.bench_iters_reduction);
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_reduction; t++) {
     if (sim)
@@ -276,11 +245,8 @@ std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
     auto t1 = Clock::now();
     T result = kernel(inputs..., n);
     auto t2 = Clock::now();
-    if (t >= conf.warmup_iters) {
-      times[t - conf.warmup_iters] =
-          std::chrono::duration_cast<std::chrono::duration<double>>(t2 - t1)
-              .count();
-    }
+    if (t >= conf.warmup_iters)
+      times[t - conf.warmup_iters] = duration_cast(t2 - t1).count();
     if (!check_single<T, is_fp>(result, gold, label))
       return std::nullopt;
   }
@@ -288,11 +254,55 @@ std::optional<TimingResult> run_bench_reduce(Kernel kernel, T gold, uint64_t n,
   return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
 }
 
+// Run a simple reduction (e.g., sum/max/min/mult/or) and all its simulation
+// variants.
+template <typename T, bool is_fp, RedOp Op, SimulationLike<T> Sim,
+          typename Kernel>
+void run_red_simple(Kernel kernel, const T *in, uint64_t n,
+                    std::string_view type_name, Sim *sim) {
+  std::optional<TimingResult> r;
+
+  T gold = gold_red<T, Op>(in, n);
+  if (conf.reduction) {
+    r = run_bench_red<T, is_fp>(kernel, gold, n, red_op_to_str<Op>("red_{}"),
+                                sim, in);
+    print_result(red_op_to_str<Op>("red_{}"), type_name, n, r);
+  }
+  if (conf.reduction_simulation) {
+    for (const auto &[name, func] : sim->template get_all_red_variants<Op>()) {
+      r = run_bench_red<T, is_fp>(func, gold, n, name, sim, in);
+      print_result(name, type_name, n, r);
+    }
+  }
+}
+
+// Run a simple scan (e.g., sum/max/min/mult) and all its simulation variants.
+template <typename T, bool is_fp, RedOp Op, SimulationLike<T> Sim,
+          typename Kernel>
+void run_scan_simple(Kernel kernel, T *gold, const T *in, T *out, uint64_t n,
+                     std::string_view type_name, Sim *sim) {
+  std::optional<TimingResult> r;
+
+  gold_scan_excl<T, Op>(in, gold, n);
+  if (conf.scan) {
+    r = run_bench_scan<T, is_fp>(kernel, out, gold, n,
+                                 red_op_to_str<Op>("scan_{}_excl"), sim, in);
+    print_result(red_op_to_str<Op>("scan_{}_excl"), type_name, n, r);
+  }
+  if (conf.scan_simulation) {
+    for (const auto &[name, func] :
+         sim->template get_all_scan_excl_variants<Op>()) {
+      r = run_bench_scan<T, is_fp>(func, out, gold, n, name, sim, in);
+      print_result(name, type_name, n, r);
+    }
+  }
+}
+
 // =========================================================================
 // Templated per-type benchmark runner
 // =========================================================================
 
-template <typename T, bool is_fp> void run_type(const char *type_name) {
+template <typename T, bool is_fp> void run_type(std::string_view type_name) {
   for (uint64_t n : conf.array_sizes) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
@@ -322,17 +332,17 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       // ================================================================
       // dot reduction
       // ================================================================
-      gold = gold_reduce_dot(in1, in2, n);
+      gold = gold_red_dot(in1, in2, n);
       if (conf.reduction) {
-        r = run_bench_reduce<T, is_fp>(reduce_dot<T>, gold, n, "red_dot",
-                                       simulation, in1, in2);
+        r = run_bench_red<T, is_fp>(red_dot<T>, gold, n, "red_dot", simulation,
+                                    in1, in2);
         print_result("red_dot", type_name, n, r);
       }
       if (conf.reduction_simulation) {
         for (const auto &[name, func] :
-             simulation->get_all_reduce_dot_variants()) {
-          r = run_bench_reduce<T, is_fp>(func, gold, n, name, simulation, in1,
-                                         in2);
+             simulation->get_all_red_dot_variants()) {
+          r = run_bench_red<T, is_fp>(func, gold, n, name, simulation, in1,
+                                      in2);
           print_result(name, type_name, n, r);
         }
       }
@@ -340,52 +350,49 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       // ================================================================
       // max reduction
       // ================================================================
-      gold = gold_reduce_max(in1, n);
-      if (conf.reduction) {
-        r = run_bench_reduce<T, is_fp>(reduce_max<T>, gold, n, "red_max",
-                                       simulation, in1);
-        print_result("red_max", type_name, n, r);
-      }
-      if (conf.reduction_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_reduce_variants<RedOp::Max>()) {
-          r = run_bench_reduce<T, is_fp>(func, gold, n, name, simulation, in1);
-          print_result(name, type_name, n, r);
-        }
-      }
+      run_red_simple<T, is_fp, RedOp::Max>(red_max<T>, in1, n, type_name,
+                                           simulation);
 
       // ================================================================
-      // min reduction
+      // mult reduction
       // ================================================================
-      gold = gold_reduce_min(in1, n);
-      if (conf.reduction) {
-        r = run_bench_reduce<T, is_fp>(reduce_min<T>, gold, n, "red_min",
-                                       simulation, in1);
-        print_result("red_min", type_name, n, r);
-      }
-      if (conf.reduction_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_reduce_variants<RedOp::Min>()) {
-          r = run_bench_reduce<T, is_fp>(func, gold, n, name, simulation, in1);
-          print_result(name, type_name, n, r);
-        }
-      }
+      run_red_simple<T, is_fp, RedOp::Mult>(red_mult<T>, in1, n, type_name,
+                                            simulation);
 
       // ================================================================
       // sum reduction
       // ================================================================
-      gold = gold_reduce_sum(in1, n);
+      run_red_simple<T, is_fp, RedOp::Sum>(red_sum<T>, in1, n, type_name,
+                                           simulation);
+
+      // ================================================================
+      // sum reduction (non-standard)
+      // ================================================================
+      gold = gold_red<T, RedOp::Sum>(in1, n);
       if (conf.reduction) {
-        r = run_bench_reduce<T, is_fp>(reduce_sum<T>, gold, n, "red_sum",
-                                       simulation, in1);
-        print_result("red_sum", type_name, n, r);
+        r = run_bench_red<T, is_fp>(red_sum_indirect<T>, gold, n,
+                                    "red_sum_indirect", simulation, in1);
+        print_result("red_sum_indirect", type_name, n, r);
       }
-      if (conf.reduction_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_reduce_variants<RedOp::Sum>()) {
-          r = run_bench_reduce<T, is_fp>(func, gold, n, name, simulation, in1);
-          print_result(name, type_name, n, r);
-        }
+
+      // ================================================================
+      // sum reduction (combined with max reduction) - in the same loop ...
+      // ================================================================
+      gold = static_cast<T>(
+          static_cast<uint64_t>(gold_red<T, RedOp::Sum>(in1, n)) |
+          static_cast<uint64_t>(gold_red<T, RedOp::Max>(in1, n)));
+      if (conf.reduction) {
+        r = run_bench_red<T, is_fp>(red_sum_max<T>, gold, n, "red_sum_max",
+                                    simulation, in1);
+        print_result("red_sum_max", type_name, n, r);
+      }
+      // ================================================================
+      // ... and in separate loops
+      // ================================================================
+      if (conf.reduction) {
+        r = run_bench_red<T, is_fp>(red_sum_max_separate<T>, gold, n,
+                                    "red_sum_max_separate", simulation, in1);
+        print_result("red_sum_max_separate", type_name, n, r);
       }
     }
 
@@ -398,7 +405,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       // ================================================================
       // exclusive dot scan
       // ================================================================
-      gold_exclusive_dot(in1, in2, gold, n);
+      gold_scan_excl_dot(in1, in2, gold, n);
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_dot_excl<T>, out, gold, n,
@@ -418,7 +425,7 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       // ================================================================
       // inclusive dot scan
       // ================================================================
-      gold_inclusive_dot(in1, in2, gold, n);
+      gold_scan_incl_dot(in1, in2, gold, n);
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_dot_incl<T>, out, gold, n,
@@ -438,122 +445,26 @@ template <typename T, bool is_fp> void run_type(const char *type_name) {
       // ================================================================
       // exclusive max scan
       // ================================================================
-      gold_exclusive_max(in1, gold, n);
-
-      if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_max_excl<T>, out, gold, n,
-                                     "scan_max_excl", simulation, in1);
-        print_result("scan_max_excl", type_name, n, r);
-      }
-
-      if (conf.scan_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_scan_excl_variants<RedOp::Max>()) {
-          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                       in1);
-          print_result(name, type_name, n, r);
-        }
-      }
+      run_scan_simple<T, is_fp, RedOp::Max>(scan_max_excl<T>, gold, in1, out, n,
+                                            type_name, simulation);
 
       // ================================================================
       // inclusive max scan
       // ================================================================
-      gold_inclusive_max(in1, gold, n);
-
-      if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_max_incl<T>, out, gold, n,
-                                     "scan_max_incl", simulation, in1);
-        print_result("scan_max_incl", type_name, n, r);
-      }
-
-      if (conf.scan_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_scan_incl_variants<RedOp::Max>()) {
-          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                       in1);
-          print_result(name, type_name, n, r);
-        }
-      }
-
-      // ================================================================
-      // exclusive min scan
-      // ================================================================
-      gold_exclusive_min(in1, gold, n);
-
-      if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_min_excl<T>, out, gold, n,
-                                     "scan_min_excl", simulation, in1);
-        print_result("scan_min_excl", type_name, n, r);
-      }
-
-      if (conf.scan_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_scan_excl_variants<RedOp::Min>()) {
-          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                       in1);
-          print_result(name, type_name, n, r);
-        }
-      }
-
-      // ================================================================
-      // inclusive min scan
-      // ================================================================
-      gold_inclusive_min(in1, gold, n);
-
-      if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_min_incl<T>, out, gold, n,
-                                     "scan_min_incl", simulation, in1);
-        print_result("scan_min_incl", type_name, n, r);
-      }
-
-      if (conf.scan_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_scan_incl_variants<RedOp::Min>()) {
-          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                       in1);
-          print_result(name, type_name, n, r);
-        }
-      }
+      run_scan_simple<T, is_fp, RedOp::Max>(scan_max_incl<T>, gold, in1, out, n,
+                                            type_name, simulation);
 
       // ================================================================
       // exclusive sum scan
       // ================================================================
-      gold_exclusive_sum(in1, gold, n);
-
-      if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_sum_excl<T>, out, gold, n,
-                                     "scan_sum_excl", simulation, in1);
-        print_result("scan_sum_excl", type_name, n, r);
-      }
-
-      if (conf.scan_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_scan_excl_variants<RedOp::Sum>()) {
-          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                       in1);
-          print_result(name, type_name, n, r);
-        }
-      }
+      run_scan_simple<T, is_fp, RedOp::Sum>(scan_sum_excl<T>, gold, in1, out, n,
+                                            type_name, simulation);
 
       // ================================================================
       // inclusive sum scan
       // ================================================================
-      gold_inclusive_sum(in1, gold, n);
-
-      if (conf.scan) {
-        r = run_bench_scan<T, is_fp>(scan_sum_incl<T>, out, gold, n,
-                                     "scan_sum_incl", simulation, in1);
-        print_result("scan_sum_incl", type_name, n, r);
-      }
-
-      if (conf.scan_simulation) {
-        for (const auto &[name, func] :
-             simulation->template get_all_scan_incl_variants<RedOp::Sum>()) {
-          r = run_bench_scan<T, is_fp>(func, out, gold, n, name, simulation,
-                                       in1);
-          print_result(name, type_name, n, r);
-        }
-      }
+      run_scan_simple<T, is_fp, RedOp::Sum>(scan_sum_incl<T>, gold, in1, out, n,
+                                            type_name, simulation);
 
       free(gold);
     }

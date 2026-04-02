@@ -59,22 +59,20 @@ _REDUCTION_FUNC_ALL(min, {})
 #endif
 
 // =========================================================================
-// Simulation concept — compile-time contract for simulation types
+// Simulation concept — compile-time contract for simulation types, avoids
+// virtual dispatch and thus allows member functions to have additional template
+// parameters.
 // =========================================================================
-struct SimulationTag {};
+template <typename T> struct SimulationBase;
 
-template <typename S>
-concept SimulationLike = std::derived_from<S, SimulationTag> && requires(S s) {
-  { s.init_device() } -> std::same_as<void>;
-  { s.reset_device() } -> std::same_as<void>;
-  { s.free_device() } -> std::same_as<void>;
-};
+template <typename S, typename T>
+concept SimulationLike = std::derived_from<S, SimulationBase<T>>;
 
 // =========================================================================
 // Base class providing default (no-op) implementations.
 // Derived classes hide the methods they wish to override.
 // =========================================================================
-template <typename T> class SimulationBase : public SimulationTag {
+template <typename T> class SimulationBase {
 public:
   void init_device() {}
   void reset_device() {}
@@ -88,7 +86,7 @@ public:
   template <RedOp Op>
   std::vector<
       std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
-  get_all_reduce_variants() {
+  get_all_red_variants() {
     return {};
   }
 
@@ -96,7 +94,7 @@ public:
   std::vector<std::pair<
       std::string,
       std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
-  get_all_reduce_dot_variants() {
+  get_all_red_dot_variants() {
     return {};
   }
 
@@ -238,25 +236,29 @@ public:
       static_assert(!std::is_same_v<T, T>, "Unsupported type");
   }
 
-  template <RedOp Op> static constexpr void (*get_rfun_func())(T *, T) {
+  template <RedOp Op> static constexpr void (*get_rfun_func())(T *a, T b) {
     if constexpr (Op == RedOp::Sum)
       return get_rfun_sum_func();
     else if constexpr (Op == RedOp::Max)
       return get_rfun_max_func();
     else if constexpr (Op == RedOp::Min)
       return get_rfun_min_func();
+    else if constexpr (Op == RedOp::Mult) // unsupported by AOMP codegen
+      return [](T *a, T b) { *a *= b; };
     else
       static_assert(!std::is_same_v<T, T>, "Unsupported scan op");
   }
 
   template <RedOp Op>
-  static constexpr void (*get_rfun_lds_func())(_RF_LDS T *, _RF_LDS T *) {
+  static constexpr void (*get_rfun_lds_func())(_RF_LDS T *a, _RF_LDS T *b) {
     if constexpr (Op == RedOp::Sum)
       return get_rfun_sum_lds_func();
     else if constexpr (Op == RedOp::Max)
       return get_rfun_max_lds_func();
     else if constexpr (Op == RedOp::Min)
       return get_rfun_min_lds_func();
+    else if constexpr (Op == RedOp::Mult) // unsupported by AOMP codegen
+      return [](_RF_LDS T *a, _RF_LDS T *b) { *a *= *b; };
     else
       static_assert(!std::is_same_v<T, T>, "Unsupported scan op");
   }

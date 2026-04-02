@@ -23,6 +23,14 @@
 #ifndef CODEGEN_AUTODETECTION
 #define CODEGEN_AUTODETECTION 0
 #endif
+#if CODEGEN_AUTODETECTION
+#define TEAMS
+#define THREADS
+#else // CODEGEN_AUTODETECTION
+#define TEAMS num_teams(XTEAM_NUM_TEAMS)
+#define THREADS num_threads(XTEAM_NUM_THREADS)
+#endif // CODEGEN_AUTODETECTION
+#define TEAMS_THREADS TEAMS THREADS
 // If true, use no-loop scan codegen.
 #ifndef NOLOOP
 #define NOLOOP 0
@@ -81,7 +89,7 @@ template <typename T> T *target_alloc(uint64_t n, int devid) {
 // RedOp-generic helpers
 // =========================================================================
 
-enum class RedOp { Sum, Max, Min };
+enum class RedOp { Sum, Max, Min, Mult };
 
 template <typename T, RedOp Op> constexpr T red_identity() {
   if constexpr (Op == RedOp::Sum)
@@ -90,6 +98,8 @@ template <typename T, RedOp Op> constexpr T red_identity() {
     return std::numeric_limits<T>::lowest();
   else if constexpr (Op == RedOp::Min)
     return std::numeric_limits<T>::max();
+  else if constexpr (Op == RedOp::Mult)
+    return T(1);
   else
     static_assert(!std::is_same_v<T, T>, "Unsupported red op");
 }
@@ -101,17 +111,21 @@ template <typename T, RedOp Op> constexpr T red_combine(T a, T b) {
     return std::max(a, b);
   else if constexpr (Op == RedOp::Min)
     return std::min(a, b);
+  else if constexpr (Op == RedOp::Mult)
+    return a * b;
   else
     static_assert(!std::is_same_v<T, T>, "Unsupported red op");
 }
 
-template <RedOp Op> std::string red_op_to_str(const std::string_view prefix) {
+template <RedOp Op> std::string red_op_to_str(std::string_view fmt) {
   if constexpr (Op == RedOp::Sum)
-    return std::vformat(prefix, std::make_format_args("sum"));
+    return std::vformat(fmt, std::make_format_args("sum"));
   else if constexpr (Op == RedOp::Max)
-    return std::vformat(prefix, std::make_format_args("max"));
+    return std::vformat(fmt, std::make_format_args("max"));
   else if constexpr (Op == RedOp::Min)
-    return std::vformat(prefix, std::make_format_args("min"));
+    return std::vformat(fmt, std::make_format_args("min"));
+  else if constexpr (Op == RedOp::Mult)
+    return std::vformat(fmt, std::make_format_args("mult"));
   else
     static_assert(!std::is_same_v<RedOp, RedOp>, "Unsupported red op");
 }
