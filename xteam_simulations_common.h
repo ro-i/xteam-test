@@ -20,7 +20,7 @@
 #include "common.h"
 
 // =========================================================================
-// Common macros and rfun declarations shared by dev and AOMP simulations
+// Common macros and rfun declarations shared by AOMP simulations
 // =========================================================================
 
 #define _UI unsigned int

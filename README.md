@@ -26,3 +26,5 @@ Example: `./run_bench.sh -rRq -n1 aomp aomp_dev trunk`
 - does a quick run, testing only one array size (`-q`)
 - runs reduction tests (`-r`)
 - runs reduction simulation tests (`-R`)
+
+Note that the input data used for the tests is always the same. If failures don't reproduce reliably, it's not due to changing data, but rather due to a race condition in the algorithm under test.
