@@ -58,7 +58,7 @@ T red_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 
 // Reduction as part of a larger kernel that is doing additional work beyond
 // that reduction.
-template <typename T> T red_sum_max(const T *__restrict in, uint64_t n) {
+template <typename T> T red_combined(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   T m = red_identity<T, RedOp::Max>();
 #pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
@@ -85,7 +85,7 @@ template <typename T> T red_mult(const T *__restrict in, uint64_t n) {
 }
 
 // Non-standard sum isn't detected by AOMP's pattern matching.
-template <typename T> T red_sum_indirect(const T *__restrict in, uint64_t n) {
+template <typename T> T red_indirect(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   auto accumulate = [](T a, T b) { return a + b; };
 #pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : s)
@@ -95,7 +95,7 @@ template <typename T> T red_sum_indirect(const T *__restrict in, uint64_t n) {
 }
 
 template <typename T>
-T red_sum_max_separate(const T *__restrict in, uint64_t n) {
+T red_combined_separate(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   T m = red_identity<T, RedOp::Max>();
 #pragma omp target map(tofrom : s, m)
@@ -366,33 +366,33 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
                                            simulation);
 
       // ================================================================
-      // sum reduction (non-standard)
+      // indirect reduction
       // ================================================================
       gold = gold_red<T, RedOp::Sum>(in1, n);
       if (conf.reduction) {
-        r = run_bench_red<T, is_fp>(red_sum_indirect<T>, gold, n,
-                                    "red_sum_indirect", simulation, in1);
-        print_result("red_sum_indirect", type_name, n, r);
+        r = run_bench_red<T, is_fp>(red_indirect<T>, gold, n, "red_indirect",
+                                    simulation, in1);
+        print_result("red_indirect", type_name, n, r);
       }
 
       // ================================================================
-      // sum reduction (combined with max reduction) - in the same loop ...
+      // combined reduction - in the same loop ...
       // ================================================================
       gold = static_cast<T>(
           static_cast<uint64_t>(gold_red<T, RedOp::Sum>(in1, n)) |
           static_cast<uint64_t>(gold_red<T, RedOp::Max>(in1, n)));
       if (conf.reduction) {
-        r = run_bench_red<T, is_fp>(red_sum_max<T>, gold, n, "red_sum_max",
+        r = run_bench_red<T, is_fp>(red_combined<T>, gold, n, "red_combined",
                                     simulation, in1);
-        print_result("red_sum_max", type_name, n, r);
+        print_result("red_combined", type_name, n, r);
       }
       // ================================================================
       // ... and in separate loops
       // ================================================================
       if (conf.reduction) {
-        r = run_bench_red<T, is_fp>(red_sum_max_separate<T>, gold, n,
-                                    "red_sum_max_separate", simulation, in1);
-        print_result("red_sum_max_separate", type_name, n, r);
+        r = run_bench_red<T, is_fp>(red_combined_separate<T>, gold, n,
+                                    "red_combined_separate", simulation, in1);
+        print_result("red_combined_separate", type_name, n, r);
       }
     }
 
@@ -581,7 +581,7 @@ int main(int argc, char **argv) {
 
   std::cout << "Array sizes: ";
   for (uint64_t sz : conf.array_sizes)
-    std::cout << std::format(" {}", sz);
+    std::cout << " " << fmt_num_sep(std::format("{}", sz));
   std::cout << "\n\n";
 
   print_header();

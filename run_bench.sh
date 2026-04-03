@@ -34,7 +34,11 @@ reduction_simulation=0
 scan_simulation=0
 warmup_iters=2
 
-# ── Parse options ───────────────────────────────────────────────────────────
+# Add locale-independent thousand separators to make visual number parsing easier
+format_mbps() {
+  sed ':a;s/\B[0-9]\{3\}\>/,&/;ta'
+}
+
 usage() {
   echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-B N] [-q] [-r] [-s] [-R] [-S] [-w N] [-h] compiler_labels..."
   echo "  -c: Only collect results for the given number of rounds and the given labels, don't run any tests"
@@ -149,10 +153,9 @@ echo "════════════════════════�
 echo
 
 # Header
-printf "%-24s %-8s %10s" "test" "type" "N"
+printf "%-24s %-8s %15s" "test" "type" "N"
 for label in "${labels[@]}"; do
-  printf "  %15s" "$label (best)"
-  printf "  %15s" "$label (avg)"
+  printf "  %15s  %15s" "$label (best)" "$label (avg)"
 done
 echo
 
@@ -161,22 +164,22 @@ echo
 # (Not all labels might have the same tests, so we need to collect all test
 # lines from all labels.)
 mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${labels[@]}")
-test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
+test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9,]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
 
 # Extract data lines (skip headers, blanks, and section markers)
 echo "$test_spec" | while read -r test_name type_name n_val; do
-  printf "%-24s %-8s %10s" "$test_name" "$type_name" "$n_val"
+  printf "%-24s %-8s %15s" "$test_name" "$type_name" "$n_val"
 
   for label in "${labels[@]}"; do
     unset best_mbps avg_mbps
 
     mapfile -t file_list < <(printf "${results_dir}/${label}_round%d.txt\n" $(seq 1 "$rounds"))
-    mapfile -t best_mbps_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}")
-    mapfile -t avg_mbps_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}")
+    mapfile -t best_mbps_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}" | sed "s/,//g")
+    mapfile -t avg_mbps_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}" | sed "s/,//g")
 
     if [[ ${#best_mbps_list[@]} -gt 0 ]]; then
       if [[ ! " ${best_mbps_list[*]} " =~ " FAIL " ]]; then
-        best_mbps=$(printf "%s\n" "${best_mbps_list[@]}" | sort -rn | head -1)
+        best_mbps=$(printf "%s\n" "${best_mbps_list[@]}" | sort -rn | head -1 | format_mbps)
       else
         best_mbps="FAIL"
       fi
@@ -187,7 +190,7 @@ echo "$test_spec" | while read -r test_name type_name n_val; do
         for mbps in "${avg_mbps_list[@]}"; do
           avg_mbps=$(echo "$avg_mbps + $mbps" | bc -l)
         done
-        avg_mbps=$(echo "scale=0; $avg_mbps / ${#avg_mbps_list[@]}" | bc -l)
+        avg_mbps=$(echo "scale=0; $avg_mbps / ${#avg_mbps_list[@]}" | bc -l | format_mbps)
       else
         avg_mbps="FAIL"
       fi

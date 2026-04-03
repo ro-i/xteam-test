@@ -171,24 +171,34 @@ inline TimingResult create_timing_result(const std::vector<double> &times,
   return TimingResult{*mn, *mx, avg, best_mbps, avg_mbps};
 }
 
+// Add locale-independent thousand separators to make visual number parsing
+// easier
+static std::string fmt_num_sep(std::string s) {
+  for (int pos = s.length() - 3; pos > 0; pos -= 3)
+    s.insert(pos, ",");
+  return s;
+}
+
 inline void print_result(std::string_view test, std::string_view type,
                          uint64_t n, const std::optional<TimingResult> &r) {
   if (!r) {
-    std::cerr << std::format("{:<24} {:<8} {:>10}  FAIL\n", test, type, n);
+    std::cerr << std::format("{:<24} {:<8} {:>15}  FAIL\n", test, type, n);
     return;
   }
-  std::cout << std::format("{:<24} {:<8} {:>10}  {:>10.6f}  {:>10.6f}  "
-                           "{:>10.6f}  {:>10.0f}  {:>10.0f}\n",
-                           test, type, n, r->min_s, r->max_s, r->avg_s,
-                           r->best_mbps, r->avg_mbps);
+  std::cout << std::format("{:<24} {:<8} {:>15}  {:>10.6f}  {:>10.6f}  "
+                           "{:>10.6f}  {:>12}  {:>12}\n",
+                           test, type, fmt_num_sep(std::format("{}", n)),
+                           r->min_s, r->max_s, r->avg_s,
+                           fmt_num_sep(std::format("{:.0f}", r->best_mbps)),
+                           fmt_num_sep(std::format("{:.0f}", r->avg_mbps)));
 }
 
 inline void print_header() {
   std::cout << std::format(
-      "{:>24} {:>8} {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}\n", "test",
+      "{:>24} {:>8} {:>15}  {:>10}  {:>10}  {:>10}  {:>12}  {:>12}\n", "test",
       "type", "N", "min(s)", "max(s)", "avg(s)", "best MB/s", "avg MB/s");
   std::cout << std::format(
-      "{:->24} {:->8} {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}\n",
-      "------------------------", "--------", "----------", "----------",
-      "----------", "----------", "----------", "----------");
+      "{:->24} {:->8} {:>15}  {:>10}  {:>10}  {:>10}  {:>12}  {:>12}\n",
+      "------------------------", "--------", "---------------", "----------",
+      "----------", "----------", "------------", "------------");
 }
