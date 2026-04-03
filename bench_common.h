@@ -86,36 +86,30 @@ template <typename T> T gold_red_dot(const T *a, const T *b, uint64_t n) {
   return s;
 }
 
-template <typename T, RedOp Op>
-void gold_scan_incl(const T *in, T *out, uint64_t n) {
+template <typename T, RedOp Op, ScanMode Mode>
+void gold_scan(const T *in, T *out, uint64_t n) {
   T a = red_identity<T, Op>();
   for (uint64_t i = 0; i < n; i++) {
-    a = red_combine<T, Op>(a, in[i]);
-    out[i] = a;
+    if constexpr (Mode == ScanMode::Excl) {
+      out[i] = a;
+      a = red_combine<T, Op>(a, in[i]);
+    } else {
+      a = red_combine<T, Op>(a, in[i]);
+      out[i] = a;
+    }
   }
 }
-template <typename T, RedOp Op>
-void gold_scan_excl(const T *in, T *out, uint64_t n) {
-  T a = red_identity<T, Op>();
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = a;
-    a = red_combine<T, Op>(a, in[i]);
-  }
-}
-template <typename T>
-void gold_scan_incl_dot(const T *a, const T *b, T *out, uint64_t n) {
+template <typename T, ScanMode Mode>
+void gold_scan_dot(const T *a, const T *b, T *out, uint64_t n) {
   T s = T(0);
   for (uint64_t i = 0; i < n; i++) {
-    s += a[i] * b[i];
-    out[i] = s;
-  }
-}
-template <typename T>
-void gold_scan_excl_dot(const T *a, const T *b, T *out, uint64_t n) {
-  T s = T(0);
-  for (uint64_t i = 0; i < n; i++) {
-    out[i] = s;
-    s += a[i] * b[i];
+    if constexpr (Mode == ScanMode::Excl) {
+      out[i] = s;
+      s += a[i] * b[i];
+    } else {
+      s += a[i] * b[i];
+      out[i] = s;
+    }
   }
 }
 

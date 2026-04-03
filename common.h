@@ -90,6 +90,7 @@ template <typename T> T *target_alloc(uint64_t n, int devid) {
 // =========================================================================
 
 enum class RedOp { Sum, Max, Min, Mult };
+enum class ScanMode { Incl, Excl };
 
 template <typename T, RedOp Op> constexpr T red_identity() {
   if constexpr (Op == RedOp::Sum)
@@ -128,4 +129,15 @@ template <RedOp Op> std::string red_op_to_str(std::string_view fmt) {
     return std::vformat(fmt, std::make_format_args("mult"));
   else
     static_assert(!std::is_same_v<RedOp, RedOp>, "Unsupported red op");
+}
+
+template <RedOp Op, ScanMode Mode>
+std::string scan_op_to_str(std::string_view fmt) {
+  std::string ret = red_op_to_str<Op>(fmt);
+  if constexpr (Mode == ScanMode::Excl)
+    return ret + "_excl";
+  else if constexpr (Mode == ScanMode::Incl)
+    return ret + "_incl";
+  else
+    static_assert(!std::is_same_v<ScanMode, ScanMode>, "Unsupported scan mode");
 }

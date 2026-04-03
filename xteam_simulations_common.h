@@ -115,6 +115,19 @@ public:
     return {};
   }
 
+  template <RedOp Op, ScanMode Mode>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_variants() {
+    if constexpr (Mode == ScanMode::Incl)
+      return get_all_scan_incl_variants<Op>();
+    else if constexpr (Mode == ScanMode::Excl)
+      return get_all_scan_excl_variants<Op>();
+    else
+      static_assert(!std::is_same_v<T, T>, "Unsupported scan mode");
+  }
+
   // ... and scan_dot.
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,

@@ -277,21 +277,21 @@ void run_red_simple(Kernel kernel, const T *in, uint64_t n,
 }
 
 // Run a simple scan (e.g., sum/max/min/mult) and all its simulation variants.
-template <typename T, bool is_fp, RedOp Op, SimulationLike<T> Sim,
-          typename Kernel>
+template <typename T, bool is_fp, RedOp Op, ScanMode Mode,
+          SimulationLike<T> Sim, typename Kernel>
 void run_scan_simple(Kernel kernel, T *gold, const T *in, T *out, uint64_t n,
                      std::string_view type_name, Sim *sim) {
   std::optional<TimingResult> r;
 
-  gold_scan_excl<T, Op>(in, gold, n);
+  gold_scan<T, Op, Mode>(in, gold, n);
   if (conf.scan) {
     r = run_bench_scan<T, is_fp>(kernel, out, gold, n,
-                                 red_op_to_str<Op>("scan_{}_excl"), sim, in);
-    print_result(red_op_to_str<Op>("scan_{}_excl"), type_name, n, r);
+                                 scan_op_to_str<Op, Mode>("scan_{}"), sim, in);
+    print_result(scan_op_to_str<Op, Mode>("scan_{}"), type_name, n, r);
   }
   if (conf.scan_simulation) {
     for (const auto &[name, func] :
-         sim->template get_all_scan_excl_variants<Op>()) {
+         sim->template get_all_scan_variants<Op, Mode>()) {
       r = run_bench_scan<T, is_fp>(func, out, gold, n, name, sim, in);
       print_result(name, type_name, n, r);
     }
@@ -405,7 +405,7 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
       // ================================================================
       // exclusive dot scan
       // ================================================================
-      gold_scan_excl_dot(in1, in2, gold, n);
+      gold_scan_dot<T, ScanMode::Excl>(in1, in2, gold, n);
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_dot_excl<T>, out, gold, n,
@@ -425,7 +425,7 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
       // ================================================================
       // inclusive dot scan
       // ================================================================
-      gold_scan_incl_dot(in1, in2, gold, n);
+      gold_scan_dot<T, ScanMode::Incl>(in1, in2, gold, n);
 
       if (conf.scan) {
         r = run_bench_scan<T, is_fp>(scan_dot_incl<T>, out, gold, n,
@@ -445,26 +445,26 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
       // ================================================================
       // exclusive max scan
       // ================================================================
-      run_scan_simple<T, is_fp, RedOp::Max>(scan_max_excl<T>, gold, in1, out, n,
-                                            type_name, simulation);
+      run_scan_simple<T, is_fp, RedOp::Max, ScanMode::Excl>(
+          scan_max_excl<T>, gold, in1, out, n, type_name, simulation);
 
       // ================================================================
       // inclusive max scan
       // ================================================================
-      run_scan_simple<T, is_fp, RedOp::Max>(scan_max_incl<T>, gold, in1, out, n,
-                                            type_name, simulation);
+      run_scan_simple<T, is_fp, RedOp::Max, ScanMode::Incl>(
+          scan_max_incl<T>, gold, in1, out, n, type_name, simulation);
 
       // ================================================================
       // exclusive sum scan
       // ================================================================
-      run_scan_simple<T, is_fp, RedOp::Sum>(scan_sum_excl<T>, gold, in1, out, n,
-                                            type_name, simulation);
+      run_scan_simple<T, is_fp, RedOp::Sum, ScanMode::Excl>(
+          scan_sum_excl<T>, gold, in1, out, n, type_name, simulation);
 
       // ================================================================
       // inclusive sum scan
       // ================================================================
-      run_scan_simple<T, is_fp, RedOp::Sum>(scan_sum_incl<T>, gold, in1, out, n,
-                                            type_name, simulation);
+      run_scan_simple<T, is_fp, RedOp::Sum, ScanMode::Incl>(
+          scan_sum_incl<T>, gold, in1, out, n, type_name, simulation);
 
       free(gold);
     }
