@@ -35,7 +35,7 @@ scan_simulation=0
 warmup_iters=2
 
 # Add locale-independent thousand separators to make visual number parsing easier
-format_mbps() {
+format_number() {
   sed ':a;s/\B[0-9]\{3\}\>/,&/;ta'
 }
 
@@ -166,40 +166,69 @@ echo
 mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${labels[@]}")
 test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9,]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
 
+extract_numeric_data() {
+  local is_mbps=$1
+  unset best avg
+
+  if [[ $is_mbps -eq 1 ]]; then
+    # Get best MB/s and avg MB/s
+    mapfile -t best_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}" | sed "s/,//g")
+    mapfile -t avg_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}" | sed "s/,//g")
+  else
+    # Get min (= best) time (s) and avg time (s)
+    mapfile -t best_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$4)}" "${file_list[@]}")
+    mapfile -t avg_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$6)}" "${file_list[@]}")
+  fi
+
+  if [[ ${#best_list[@]} -gt 0 ]]; then
+    if [[ ! " ${best_list[*]} " =~ " FAIL " ]]; then
+      if [[ $is_mbps -eq 1 ]]; then
+        best=$(printf "%s\n" "${best_list[@]}" | sort -rn | head -1 | format_number)
+      else
+        best=$(printf "%s\n" "${best_list[@]}" | sort -n | head -1)
+      fi
+    else
+      best="FAIL"
+    fi
+  fi
+  if [[ ${#avg_list[@]} -gt 0 ]]; then
+    if [[ ! " ${avg_list[*]} " =~ " FAIL " ]]; then
+      avg=0
+      for val in "${avg_list[@]}"; do
+        avg=$(echo "$avg + $val" | bc -l)
+      done
+      if [[ $is_mbps -eq 1 ]]; then
+        avg=$(echo "scale=0; $avg / ${#avg_list[@]}" | bc -l | format_number)
+      else
+        avg=$(echo "scale=6; $avg / ${#avg_list[@]}" | bc -l | sed 's/^\./0./')
+      fi
+    else
+      avg="FAIL"
+    fi
+  fi
+}
+
 # Extract data lines (skip headers, blanks, and section markers)
 echo "$test_spec" | while read -r test_name type_name n_val; do
   printf "%-24s %-8s %15s" "$test_name" "$type_name" "$n_val"
 
   for label in "${labels[@]}"; do
-    unset best_mbps avg_mbps
-
     mapfile -t file_list < <(printf "${results_dir}/${label}_round%d.txt\n" $(seq 1 "$rounds"))
-    mapfile -t best_mbps_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}" | sed "s/,//g")
-    mapfile -t avg_mbps_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}" | sed "s/,//g")
 
-    if [[ ${#best_mbps_list[@]} -gt 0 ]]; then
-      if [[ ! " ${best_mbps_list[*]} " =~ " FAIL " ]]; then
-        best_mbps=$(printf "%s\n" "${best_mbps_list[@]}" | sort -rn | head -1 | format_mbps)
-      else
-        best_mbps="FAIL"
-      fi
+    extract_numeric_data 1
+    # Some tests don't do memory accesses and thus have 0 MB/s. In these cases,
+    # we fall back to time.
+    if [[ -n ${best:-} && ${best:-0} == 0 || -n ${avg:-} && ${avg:-0} == 0 ]]; then
+      extract_numeric_data 0
+      printf "  %14s*  %14s*" "${best:-N/A}" "${avg:-N/A}"
+    else
+      printf "  %15s  %15s" "${best:-N/A}" "${avg:-N/A}"
     fi
-    if [[ ${#avg_mbps_list[@]} -gt 0 ]]; then
-      if [[ ! " ${avg_mbps_list[*]} " =~ " FAIL " ]]; then
-        avg_mbps=0
-        for mbps in "${avg_mbps_list[@]}"; do
-          avg_mbps=$(echo "$avg_mbps + $mbps" | bc -l)
-        done
-        avg_mbps=$(echo "scale=0; $avg_mbps / ${#avg_mbps_list[@]}" | bc -l | format_mbps)
-      else
-        avg_mbps="FAIL"
-      fi
-    fi
-
-    printf "  %15s  %15s" "${best_mbps:-N/A}" "${avg_mbps:-N/A}"
   done
   echo
 done
 
+echo
+echo "* = fallback to time (s) because the test has no memory accesses (this is not an error!)"
 echo
 echo "Per-round results saved in $results_dir/"
