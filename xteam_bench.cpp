@@ -112,6 +112,47 @@ T red_combined_separate(const T *__restrict in, uint64_t n) {
   return static_cast<T>(static_cast<uint64_t>(s) | static_cast<uint64_t>(m));
 }
 
+// Have a reduction in a kernel that is also doing something completely
+// unrelated to the reduction (pure register work, no memory ops).
+template <typename T>
+T red_kernel_part(const T *__restrict in, uint64_t n) {
+  T s = red_identity<T, RedOp::Sum>();
+
+#pragma omp target map(tofrom : s)
+#pragma omp teams TEAMS reduction(+ : s)
+  {
+#pragma omp distribute parallel for THREADS reduction(+ : s)
+    for (uint64_t i = 0; i < n; i++)
+      s += in[i];
+
+    // Just do something, without actually doing anything
+#pragma omp parallel THREADS
+    {
+      int tid = omp_get_thread_num();
+      T x = static_cast<T>(tid);
+      for (int j = 0; j < 100; j++)
+        x = x * static_cast<T>(0.9) + static_cast<T>(j);
+      if (x == static_cast<T>(-1))
+        s += x;
+    }
+  }
+
+  return s;
+}
+
+double red_pi(uint64_t n) {
+  double pi = 0.0;
+
+  // https://en.wikipedia.org/wiki/Leibniz_formula_for_%CF%80
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : pi)
+  for (uint64_t i = 0; i < n; i++) {
+    double term = 1.0 / (2 * i + 1);
+    pi += (i & 0x1) ? -term : term;
+  }
+
+  return pi * 4.0;
+}
+
 // =========================================================================
 // GPU cross-team scan kernels (compilation unsupported by vanilla AOMP)
 // =========================================================================
@@ -354,45 +395,72 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
                                            simulation);
 
       // ================================================================
-      // mult reduction
-      // ================================================================
-      run_red_simple<T, is_fp, RedOp::Mult>(red_mult<T>, in1, n, type_name,
-                                            simulation);
-
-      // ================================================================
       // sum reduction
       // ================================================================
       run_red_simple<T, is_fp, RedOp::Sum>(red_sum<T>, in1, n, type_name,
                                            simulation);
 
-      // ================================================================
-      // indirect reduction
-      // ================================================================
-      gold = gold_red<T, RedOp::Sum>(in1, n);
-      if (conf.reduction) {
-        r = run_bench_red<T, is_fp>(red_indirect<T>, gold, n, "red_indirect",
-                                    simulation, in1);
-        print_result("red_indirect", type_name, n, r);
+      if (!conf.quick_run || std::is_same_v<T, double>) {
+        // ================================================================
+        // mult reduction
+        // ================================================================
+        run_red_simple<T, is_fp, RedOp::Mult>(red_mult<T>, in1, n, type_name,
+                                              simulation);
+
+        // ================================================================
+        // indirect reduction (sum)
+        // ================================================================
+        gold = gold_red<T, RedOp::Sum>(in1, n);
+        if (conf.reduction) {
+          r = run_bench_red<T, is_fp>(red_indirect<T>, gold, n, "red_indirect",
+                                      simulation, in1);
+          print_result("red_indirect", type_name, n, r);
+        }
+
+        // ================================================================
+        // reduction (sum) in a kernel that is also doing something completely
+        // unrelated to the reduction.
+        // ================================================================
+        gold = gold_red<T, RedOp::Sum>(in1, n);
+        if (conf.reduction) {
+          r = run_bench_red<T, is_fp>(red_kernel_part<T>, gold, n,
+                                      "red_kernel_part", simulation, in1);
+          print_result("red_kernel_part", type_name, n, r);
+        }
+
+        // ================================================================
+        // combined reduction - in the same loop ...
+        // ================================================================
+        gold = static_cast<T>(
+            static_cast<uint64_t>(gold_red<T, RedOp::Sum>(in1, n)) |
+            static_cast<uint64_t>(gold_red<T, RedOp::Max>(in1, n)));
+        if (conf.reduction) {
+          r = run_bench_red<T, is_fp>(red_combined<T>, gold, n, "red_combined",
+                                      simulation, in1);
+          print_result("red_combined", type_name, n, r);
+        }
+        // ================================================================
+        // ... and in separate loops
+        // ================================================================
+        if (conf.reduction) {
+          r = run_bench_red<T, is_fp>(red_combined_separate<T>, gold, n,
+                                      "red_combined_separate", simulation, in1);
+          print_result("red_combined_separate", type_name, n, r);
+        }
       }
 
-      // ================================================================
-      // combined reduction - in the same loop ...
-      // ================================================================
-      gold = static_cast<T>(
-          static_cast<uint64_t>(gold_red<T, RedOp::Sum>(in1, n)) |
-          static_cast<uint64_t>(gold_red<T, RedOp::Max>(in1, n)));
-      if (conf.reduction) {
-        r = run_bench_red<T, is_fp>(red_combined<T>, gold, n, "red_combined",
-                                    simulation, in1);
-        print_result("red_combined", type_name, n, r);
-      }
-      // ================================================================
-      // ... and in separate loops
-      // ================================================================
-      if (conf.reduction) {
-        r = run_bench_red<T, is_fp>(red_combined_separate<T>, gold, n,
-                                    "red_combined_separate", simulation, in1);
-        print_result("red_combined_separate", type_name, n, r);
+      if (std::is_same_v<T, double>) {
+        // ================================================================
+        // reduction computing Pi
+        // ================================================================
+        double gold_pi = std::numbers::pi;
+        uint64_t n = 5000000000;
+        if (conf.reduction) {
+          r = run_bench_red<double, true>(
+              red_pi, gold_pi, n, "red_pi",
+              static_cast<SimulationNoop<double> *>(nullptr));
+          print_result("red_pi", type_name, n, r);
+        }
       }
     }
 

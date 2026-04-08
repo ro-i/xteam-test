@@ -182,7 +182,8 @@ static std::string fmt_num_sep(std::string s) {
 inline void print_result(std::string_view test, std::string_view type,
                          uint64_t n, const std::optional<TimingResult> &r) {
   if (!r) {
-    std::cerr << std::format("{:<24} {:<8} {:>15}  FAIL\n", test, type, n);
+    std::cerr << std::format("{:<24} {:<8} {:>15}  FAIL\n", test, type,
+                             fmt_num_sep(std::format("{}", n)));
     return;
   }
   std::cout << std::format("{:<24} {:<8} {:>15}  {:>10.6f}  {:>10.6f}  "
