@@ -15,8 +15,8 @@
 #include "xteam_simulations_aomp.h"
 #elif defined(TRUNK)
 #include "xteam_simulations_trunk.h"
-#elif defined(TRUNK_DEV)
-#include "xteam_simulations_trunk_dev.h"
+#elif defined(TRUNK_JD)
+#include "xteam_simulations_trunk_jd.h"
 #elif defined(AOMP_DEV)
 #include "xteam_simulations_aomp_dev.h"
 #endif
@@ -70,9 +70,22 @@ template <typename T> T red_combined(const T *__restrict in, uint64_t n) {
   return static_cast<T>(static_cast<uint64_t>(s) | static_cast<uint64_t>(m));
 }
 
+double red_pi(uint64_t n) {
+  double pi = 0.0;
+
+  // https://en.wikipedia.org/wiki/Leibniz_formula_for_%CF%80
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : pi)
+  for (uint64_t i = 0; i < n; i++) {
+    double term = 1.0 / (2 * i + 1);
+    pi += (i & 0x1) ? -term : term;
+  }
+
+  return pi * 4.0;
+}
+
 // =========================================================================
-// GPU cross-team reduction kernels where the AOMP codegen doesn't pattern match
-// the fast path.
+// GPU cross-team reduction kernels where the AOMP codegen doesn't pattern
+// match the optimized codegen.
 // =========================================================================
 
 // Multiplication isn't detected by AOMP's pattern matching.
@@ -138,19 +151,6 @@ T red_kernel_part(const T *__restrict in, uint64_t n) {
   }
 
   return s;
-}
-
-double red_pi(uint64_t n) {
-  double pi = 0.0;
-
-  // https://en.wikipedia.org/wiki/Leibniz_formula_for_%CF%80
-#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(+ : pi)
-  for (uint64_t i = 0; i < n; i++) {
-    double term = 1.0 / (2 * i + 1);
-    pi += (i & 0x1) ? -term : term;
-  }
-
-  return pi * 4.0;
 }
 
 // =========================================================================
@@ -357,8 +357,8 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
     SimulationAOMP<T> *simulation = new SimulationAOMP<T>();
 #elif defined(TRUNK)
     SimulationTrunk<T> *simulation = new SimulationTrunk<T>();
-#elif defined(TRUNK_DEV)
-    SimulationTrunkDev<T> *simulation = new SimulationTrunkDev<T>();
+#elif defined(TRUNK_JD)
+    SimulationTrunkJD<T> *simulation = new SimulationTrunkJD<T>();
 #elif defined(AOMP_DEV)
     SimulationAOMPDev<T> *simulation = new SimulationAOMPDev<T>();
 #else

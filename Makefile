@@ -22,12 +22,15 @@ COMMON_HEADERS = xteam_simulations_common.h common.h bench_common.h
 CXX_aomp_dev   ?=
 CXX_aomp       ?=
 CXX_trunk      ?=
+CXX_trunk_jd   ?=
 FLAGS_aomp_dev ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
 FLAGS_aomp     ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
 FLAGS_trunk    ?= $(COMMON_FLAGS)
+FLAGS_trunk_jd ?= $(COMMON_FLAGS)
 DEFS_aomp_dev  ?= $(COMMON_DEFS) -DAOMP_DEV
 DEFS_aomp      ?= $(COMMON_DEFS) -DAOMP
 DEFS_trunk     ?= $(COMMON_DEFS) -DTRUNK
+DEFS_trunk_jd  ?= $(COMMON_DEFS) -DTRUNK_JD
 # Note: potentially test no-loop with -fopenmp-target-xteam-no-loop-scan
 
 # Collect all labels that have a non-empty CXX_<label>
@@ -40,6 +43,9 @@ ifneq ($(strip $(CXX_aomp)),)
 endif
 ifneq ($(strip $(CXX_trunk)),)
   LABELS += trunk
+endif
+ifneq ($(strip $(CXX_trunk_jd)),)
+  LABELS += trunk_jd
 endif
 
 ifeq ($(strip $(LABELS)),)

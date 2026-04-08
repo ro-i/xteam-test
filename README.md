@@ -10,6 +10,12 @@ Each compiler is defined and implemented by
 - a preprocessor makro that enables/disables compiler specific parts of the benchmark code
 - an `xteam_simulations_<label>.h` header implementing simulations using the API endpoints provided by the compiler-specific OpenMP device runtime
 
+Currently used compilers (with varying levels of support), by their label:
+- `aomp`, a build of ROCm/amd-staging, commit 790951fe828739002964f2a0fe40fc2048a84443 (2026-03-08)
+- `aomp_dev`, a build of https://github.com/ROCm/llvm-project/tree/amd/dev/ro-i/xteam-reduction-scan (based on `aomp` above)
+- `trunk`, a build of llvm/main, commit 6a785bf069194beea5ca0a7caac64dd27396c46e (2026-03-16)
+- `trunk_jd`, a build of https://github.com/jdoerfert/llvm-project/tree/omp_multi_lvl_red (based on `trunk` above)
+
 Compile benchmarks binaries:
 - set `CXX_<label>` in either `Makefile` or a `local.mk` file to the path to the corresponding `clang++`.
 - run either `make` (or `make all`) to compile the benchmark binary for all compilers or
