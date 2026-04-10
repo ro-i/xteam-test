@@ -127,8 +127,7 @@ T red_combined_separate(const T *__restrict in, uint64_t n) {
 
 // Have a reduction in a kernel that is also doing something completely
 // unrelated to the reduction (pure register work, no memory ops).
-template <typename T>
-T red_kernel_part(const T *__restrict in, uint64_t n) {
+template <typename T> T red_kernel_part(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
 
 #pragma omp target map(tofrom : s)
@@ -138,7 +137,7 @@ T red_kernel_part(const T *__restrict in, uint64_t n) {
     for (uint64_t i = 0; i < n; i++)
       s += in[i];
 
-    // Just do something, without actually doing anything
+      // Just do something, without actually doing anything
 #pragma omp parallel THREADS
     {
       int tid = omp_get_thread_num();

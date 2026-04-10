@@ -33,4 +33,6 @@ Example: `./run_bench.sh -rRq -n1 aomp aomp_dev trunk`
 - runs reduction tests (`-r`)
 - runs reduction simulation tests (`-R`)
 
-Note that the input data used for the tests is always the same. If failures don't reproduce reliably, it's not due to changing data, but rather due to a race condition in the algorithm under test.
+Note:
+- the input data used for the tests is always the same. If failures don't reproduce reliably, it's not due to changing data, but rather due to a race condition in the algorithm under test.
+- we assume at some points that warp size is 64 for AMD and 32 for Nvidia. In some cases, we need a compile-time constand to replicate CodeGen behavior in the simulations although a cleaner alternative would be using builtins (but they aren't constexpr).
