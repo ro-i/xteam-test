@@ -130,6 +130,9 @@ template <typename T> class SimulationTrunkJD : public SimulationTrunkBase<T> {
       // kmp_sched_distribute_static_chunked with chunk_size=512.
       for (uint64_t chunk = team_id; chunk < num_chunks;
            chunk += XTEAM_NUM_TEAMS) {
+        __trunk_sim_barrier();
+        __trunk_sim_barrier();
+
         // Parallel for: each thread processes one element in the chunk,
         // matching kmp_sched_static within the parallel region.
         uint64_t i = chunk * XTEAM_NUM_THREADS + tid;
@@ -142,6 +145,9 @@ template <typename T> class SimulationTrunkJD : public SimulationTrunkBase<T> {
 
         if (is_master)
           team_priv = red_combine<T, Op>(team_priv, priv);
+
+        __trunk_sim_barrier();
+        __trunk_sim_barrier();
       }
 
       void *rl[1] = {&team_priv};
