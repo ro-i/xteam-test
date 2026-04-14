@@ -279,6 +279,9 @@ template <typename T> class SimulationTrunk : public SimulationTrunkBase<T> {
       // Distribute loop: round-robin chunks across teams
       for (uint64_t chunk = team_id; chunk < num_chunks;
            chunk += XTEAM_NUM_TEAMS) {
+        __trunk_sim_barrier();
+        __trunk_sim_barrier();
+
         // Parallel for: one element per thread within the chunk
         uint64_t i = chunk * XTEAM_NUM_THREADS + tid;
         T priv = (i < n) ? a[i] * b[i] : rnv;
@@ -290,6 +293,9 @@ template <typename T> class SimulationTrunk : public SimulationTrunkBase<T> {
 
         if (is_master)
           team_priv += priv;
+
+        __trunk_sim_barrier();
+        __trunk_sim_barrier();
       }
 
       void *rl[1] = {&team_priv};
