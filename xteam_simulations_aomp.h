@@ -294,14 +294,13 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
     num_threads(XTEAM_NUM_THREADS) map(tofrom : s)                             \
     is_device_ptr(d_team_vals, d_td)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      auto xteamr_func = get_kmpc_xteamr_func<T>();
       T val = rnv;
       for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
         val = red_combine<T, Op>(val, in[i]);
-      xteamr_func(val, &s, d_team_vals, d_td,
-                  this->template get_rfun_func<Op>(),
-                  this->template get_rfun_lds_func<Op>(), rnv, k,
-                  XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+      get_kmpc_xteamr_func<T>()(val, &s, d_team_vals, d_td,
+                                this->template get_rfun_func<Op>(),
+                                this->template get_rfun_lds_func<Op>(), rnv, k,
+                                XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
     }
 
     return s;
@@ -314,13 +313,13 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
     num_threads(XTEAM_NUM_THREADS) map(tofrom : s)                             \
     is_device_ptr(d_team_vals, d_td)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      auto xteamr_func = get_kmpc_xteamr_func<T>();
       T val = rnv;
       for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
         val += a[i] * b[i];
-      xteamr_func(val, &s, d_team_vals, d_td, this->get_rfun_sum_func(),
-                  this->get_rfun_sum_lds_func(), rnv, k, XTEAM_NUM_TEAMS,
-                  _XTEAMR_SCOPE);
+      get_kmpc_xteamr_func<T>()(val, &s, d_team_vals, d_td,
+                                this->get_rfun_sum_func(),
+                                this->get_rfun_sum_lds_func(), rnv, k,
+                                XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
     }
 
     return s;
@@ -358,17 +357,16 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage, d_team_vals, d_td)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      auto xteams_func = get_kmpc_xteams_func<T>();
       T val0 = rnv;
       for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
         val0 = red_combine<T, Op>(val0, in[k * stride + i]);
         out[k * stride + i] = val0;
       }
       d_storage[k] = val0;
-      xteams_func(val0, d_storage, out, d_team_vals, d_td,
-                  this->template get_rfun_func<Op>(),
-                  this->template get_rfun_lds_func<Op>(), rnv, k,
-                  XTEAM_NUM_TEAMS);
+      get_kmpc_xteams_func<T>()(val0, d_storage, out, d_team_vals, d_td,
+                                this->template get_rfun_func<Op>(),
+                                this->template get_rfun_lds_func<Op>(), rnv, k,
+                                XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<Op>(out, n, stride, rnv);
   }
@@ -381,17 +379,16 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage, d_team_vals, d_td)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      auto xteams_func = get_kmpc_xteams_func<T>();
       T val0 = rnv;
       for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
         out[k * stride + i] = val0;
         val0 = red_combine<T, Op>(val0, in[k * stride + i]);
       }
       d_storage[k] = val0;
-      xteams_func(val0, d_storage, out, d_team_vals, d_td,
-                  this->template get_rfun_func<Op>(),
-                  this->template get_rfun_lds_func<Op>(), rnv, k,
-                  XTEAM_NUM_TEAMS);
+      get_kmpc_xteams_func<T>()(val0, d_storage, out, d_team_vals, d_td,
+                                this->template get_rfun_func<Op>(),
+                                this->template get_rfun_lds_func<Op>(), rnv, k,
+                                XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<Op>(out, n, stride, rnv);
   }
@@ -404,16 +401,15 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage, d_team_vals, d_td)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      auto xteams_func = get_kmpc_xteams_func<T>();
       T val0 = rnv;
       for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
         val0 += a[k * stride + i] * b[k * stride + i];
         out[k * stride + i] = val0;
       }
       d_storage[k] = val0;
-      xteams_func(val0, d_storage, out, d_team_vals, d_td,
-                  this->get_rfun_sum_func(), this->get_rfun_sum_lds_func(), rnv,
-                  k, XTEAM_NUM_TEAMS);
+      get_kmpc_xteams_func<T>()(
+          val0, d_storage, out, d_team_vals, d_td, this->get_rfun_sum_func(),
+          this->get_rfun_sum_lds_func(), rnv, k, XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<RedOp::Sum>(out, n, stride, rnv);
   }
@@ -426,16 +422,15 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(d_storage, d_team_vals, d_td)
     for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      auto xteams_func = get_kmpc_xteams_func<T>();
       T val0 = rnv;
       for (uint64_t i = 0; i < stride && k * stride + i < n; i++) {
         out[k * stride + i] = val0;
         val0 += a[k * stride + i] * b[k * stride + i];
       }
       d_storage[k] = val0;
-      xteams_func(val0, d_storage, out, d_team_vals, d_td,
-                  this->get_rfun_sum_func(), this->get_rfun_sum_lds_func(), rnv,
-                  k, XTEAM_NUM_TEAMS);
+      get_kmpc_xteams_func<T>()(
+          val0, d_storage, out, d_team_vals, d_td, this->get_rfun_sum_func(),
+          this->get_rfun_sum_lds_func(), rnv, k, XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<RedOp::Sum>(out, n, stride, rnv);
   }
