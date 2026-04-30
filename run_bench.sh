@@ -25,6 +25,7 @@ collect_only=0
 rounds=1
 results_dir=results
 # Options passed to binaries
+auto_scale=0
 bench_iters_reduction=1000
 bench_iters_scan=10
 quick_run=0
@@ -48,6 +49,7 @@ usage() {
   echo
   echo "Options passed to binaries:"
   echo "  -b N: Benchmark iterations for reduction (default: $bench_iters_reduction)"
+  echo "  -a: auto-scale benchmark iterations such that the runtime per test is ~1 second (min 10 iterations)"
   echo "  -B N: Benchmark iterations for scan (default: $bench_iters_scan)"
   echo "  -q: Quick run (test only one array size) (default: $quick_run)"
   echo "  -r: Run reduction tests (default: $reduction)"
@@ -68,8 +70,9 @@ usage() {
   echo "          run the test and check the result against the gold result"
 }
 
-while getopts "cn:o:b:B:qrsRSw:h" opt; do
+while getopts "acn:o:b:B:qrsRSw:h" opt; do
   case "$opt" in
+    a) auto_scale=1;;
     c) collect_only=1 ;;
     n) rounds="$OPTARG" ;;
     o) results_dir="$OPTARG" ;;
@@ -109,6 +112,7 @@ if [[ $collect_only -eq 0 ]]; then
   args=()
   args+=("-b" "$bench_iters_reduction")
   args+=("-B" "$bench_iters_scan")
+  [[ $auto_scale -eq 1 ]] && args+=("-a")
   [[ $quick_run -eq 1 ]] && args+=("-q")
   [[ $reduction -eq 1 ]] && args+=("-r")
   [[ $scan -eq 1 ]] && args+=("-s")

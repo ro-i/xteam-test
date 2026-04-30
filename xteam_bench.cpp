@@ -17,6 +17,8 @@
 #include "xteam_simulations_trunk.h"
 #elif defined(TRUNK_JD)
 #include "xteam_simulations_trunk_jd.h"
+#elif defined(TRUNK_DEV)
+#include "xteam_simulations_trunk_dev.h"
 #elif defined(AOMP_DEV)
 #include "xteam_simulations_aomp_dev.h"
 #endif
@@ -256,18 +258,28 @@ template <typename T, bool is_fp, SimulationLike<T> Sim, typename Kernel,
 std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
                                            uint64_t n, std::string_view label,
                                            Sim *sim, Inputs... inputs) {
-  std::vector<double> times(conf.bench_iters_scan);
+  std::vector<double> times;
+  double total_time = 0.0;
+
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_scan; t++) {
     if (sim)
       sim->reset_device();
     auto t1 = Clock::now();
     kernel(inputs..., out, n);
     auto t2 = Clock::now();
-    if (t >= conf.warmup_iters)
-      times[t - conf.warmup_iters] = duration_cast(t2 - t1).count();
 #pragma omp target update from(out[0 : n])
     if (!check<T, is_fp>(out, gold, n, label))
       return std::nullopt;
+
+    if (t < conf.warmup_iters)
+      continue;
+    double d = duration_cast(t2 - t1).count();
+    times.push_back(d);
+    if (conf.auto_scale) {
+      total_time += d;
+      if (total_time >= 1.0 && times.size() >= 10)
+        break;
+    }
   }
 
   return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
@@ -278,17 +290,27 @@ template <typename T, bool is_fp, SimulationLike<T> Sim, typename Kernel,
 std::optional<TimingResult> run_bench_red(Kernel kernel, T gold, uint64_t n,
                                           std::string_view label, Sim *sim,
                                           Inputs... inputs) {
-  std::vector<double> times(conf.bench_iters_reduction);
+  std::vector<double> times;
+  double total_time = 0.0;
+
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters_reduction; t++) {
     if (sim)
       sim->reset_device();
     auto t1 = Clock::now();
     T result = kernel(inputs..., n);
     auto t2 = Clock::now();
-    if (t >= conf.warmup_iters)
-      times[t - conf.warmup_iters] = duration_cast(t2 - t1).count();
     if (!check_single<T, is_fp>(result, gold, label))
       return std::nullopt;
+
+    if (t < conf.warmup_iters)
+      continue;
+    double d = duration_cast(t2 - t1).count();
+    times.push_back(d);
+    if (conf.auto_scale) {
+      total_time += d;
+      if (total_time >= 1.0 && times.size() >= 10)
+        break;
+    }
   }
 
   return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
@@ -358,6 +380,8 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
     SimulationTrunk<T> *simulation = new SimulationTrunk<T>();
 #elif defined(TRUNK_JD)
     SimulationTrunkJD<T> *simulation = new SimulationTrunkJD<T>();
+#elif defined(TRUNK_DEV)
+    SimulationTrunkDev<T> *simulation = new SimulationTrunkDev<T>();
 #elif defined(AOMP_DEV)
     SimulationAOMPDev<T> *simulation = new SimulationAOMPDev<T>();
 #else
@@ -550,6 +574,8 @@ static void usage(const char *argv0) {
   std::cout
       << "Usage: " << argv0
       << " [-b <int>] [-B <int>] [-q] [-r] [-s] [-R] [-S] [-w <int>] [-h]\n";
+  std::cout << "  -a: auto-scale benchmark iterations such that the runtime "
+               "per test is ~1 second (min 10 iterations)\n";
   std::cout << "  -b N: Benchmark iterations for reduction\n";
   std::cout << "  -B N: Benchmark iterations for scan\n";
   std::cout << "  -q: Quick run (test only one array size)\n";
@@ -581,8 +607,11 @@ static void usage(const char *argv0) {
 int main(int argc, char **argv) {
   int opt;
 
-  while ((opt = getopt(argc, argv, "b:B:qrsRSw:h")) != -1) {
+  while ((opt = getopt(argc, argv, "ab:B:qrsRSw:h")) != -1) {
     switch (opt) {
+    case 'a':
+      conf.auto_scale = true;
+      break;
     case 'b':
       conf.bench_iters_reduction = std::stoi(optarg);
       break;
@@ -607,7 +636,7 @@ int main(int argc, char **argv) {
       conf.reduction_simulation = true;
       break;
     case 'S':
-#ifndef TRUNK
+#if !defined(TRUNK) && !defined(TRUNK_DEV)
       conf.scan_simulation = true;
 #endif
       if (!conf.scan_simulation)
@@ -637,14 +666,24 @@ int main(int argc, char **argv) {
   else
     conf.array_sizes.assign(array_sizes.begin(), array_sizes.end());
 
+  if (conf.auto_scale) {
+    conf.bench_iters_reduction =
+        std::numeric_limits<int>::max() - conf.warmup_iters;
+    conf.bench_iters_scan = std::numeric_limits<int>::max() - conf.warmup_iters;
+  }
+
   std::cout << std::format(
-      "xteam benchmark (quick run: {}) — {} warmup, {} timed "
+      "xteam benchmark (quick run: {}, auto-scale: {}) — {} warmup, {} timed "
       "iterations "
       "(reduction), {} timed iterations (scan), "
       "{} teams, {} threads, codegen autodetection: {}\n",
-      conf.quick_run ? "true" : "false", conf.warmup_iters,
-      conf.bench_iters_reduction, conf.bench_iters_scan, XTEAM_NUM_TEAMS,
-      XTEAM_NUM_THREADS, CODEGEN_AUTODETECTION ? "true" : "false");
+      conf.quick_run ? "true" : "false", conf.auto_scale ? "true" : "false",
+      conf.warmup_iters,
+      conf.auto_scale ? "auto-scaled"
+                      : std::to_string(conf.bench_iters_reduction),
+      conf.auto_scale ? "auto-scaled" : std::to_string(conf.bench_iters_scan),
+      XTEAM_NUM_TEAMS, XTEAM_NUM_THREADS,
+      CODEGEN_AUTODETECTION ? "true" : "false");
 
   std::cout << "Array sizes: ";
   for (uint64_t sz : conf.array_sizes)

@@ -42,6 +42,7 @@
 // Represents the total of threads in the Grid
 #define XTEAM_TOTAL_NUM_THREADS (XTEAM_NUM_TEAMS * XTEAM_NUM_THREADS)
 struct Config {
+  bool auto_scale = false;
   bool quick_run = false;
   bool reduction = false;
   bool reduction_simulation = false;

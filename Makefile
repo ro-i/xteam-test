@@ -19,18 +19,21 @@ COMMON_HEADERS = xteam_simulations_common.h common.h bench_common.h
 #
 # Defaults (override on the command line or via local.mk):
 -include local.mk
-CXX_aomp_dev   ?=
-CXX_aomp       ?=
-CXX_trunk      ?=
-CXX_trunk_jd   ?=
-FLAGS_aomp_dev ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
-FLAGS_aomp     ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
-FLAGS_trunk    ?= $(COMMON_FLAGS)
-FLAGS_trunk_jd ?= $(COMMON_FLAGS)
-DEFS_aomp_dev  ?= $(COMMON_DEFS) -DAOMP_DEV
-DEFS_aomp      ?= $(COMMON_DEFS) -DAOMP
-DEFS_trunk     ?= $(COMMON_DEFS) -DTRUNK
-DEFS_trunk_jd  ?= $(COMMON_DEFS) -DTRUNK_JD
+CXX_aomp_dev          ?=
+CXX_aomp              ?=
+CXX_trunk             ?=
+CXX_trunk_jd          ?=
+CXX_trunk_dev         ?=
+FLAGS_aomp_dev        ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
+FLAGS_aomp            ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
+FLAGS_trunk           ?= $(COMMON_FLAGS)
+FLAGS_trunk_jd        ?= $(COMMON_FLAGS)
+FLAGS_trunk_dev       ?= $(COMMON_FLAGS)
+DEFS_aomp_dev         ?= $(COMMON_DEFS) -DAOMP_DEV
+DEFS_aomp             ?= $(COMMON_DEFS) -DAOMP
+DEFS_trunk            ?= $(COMMON_DEFS) -DTRUNK
+DEFS_trunk_jd         ?= $(COMMON_DEFS) -DTRUNK_JD
+DEFS_trunk_dev        ?= $(COMMON_DEFS) -DTRUNK_DEV
 # Note: potentially test no-loop with -fopenmp-target-xteam-no-loop-scan
 
 # Collect all labels that have a non-empty CXX_<label>
@@ -46,6 +49,9 @@ ifneq ($(strip $(CXX_trunk)),)
 endif
 ifneq ($(strip $(CXX_trunk_jd)),)
   LABELS += trunk_jd
+endif
+ifneq ($(strip $(CXX_trunk_dev)),)
+  LABELS += trunk_dev
 endif
 
 ifeq ($(strip $(LABELS)),)
@@ -69,9 +75,16 @@ all: $(BINARIES)
 define COMPILER_RULE
 xteam_bench_$(1): $(SRC) xteam_simulations_$(1).h $(COMMON_HEADERS)
 	@test -n "$$(CXX_$(1))" || { echo "ERROR: CXX_$(1) is not set"; exit 1; }
-	mkdir -p out_$(1)
-	cd out_$(1) && $$(CXX_$(1)) $$(DEFS_$(1)) $$(FLAGS_$(1)) -o $$@ $(addprefix ../,$(SRC)) && cp $$@ ..
-	cd out_$(1) && $$(dir $$(CXX_$(1)))llvm-dis *.bc
+	@echo "Building for 208 teams ..."
+	rm -rf out_$(1)_208
+	mkdir -p out_$(1)_208
+	cd out_$(1)_208 && $$(CXX_$(1)) $$(DEFS_$(1)) -DXTEAM_NUM_TEAMS=208 $$(FLAGS_$(1)) -o $$@_208 $(addprefix ../,$(SRC)) && cp $$@_208 .. && cp $$@_208 ../$$@
+	cd out_$(1)_208 && $$(dir $$(CXX_$(1)))llvm-dis *.bc
+	@echo "Building for 10400 teams ..."
+	rm -rf out_$(1)_10400
+	mkdir -p out_$(1)_10400
+	cd out_$(1)_10400 && $$(CXX_$(1)) $$(DEFS_$(1)) -DXTEAM_NUM_TEAMS=10400 $$(FLAGS_$(1)) -o $$@_10400 $(addprefix ../,$(SRC)) && cp $$@_10400 ..
+	cd out_$(1)_10400 && $$(dir $$(CXX_$(1)))llvm-dis *.bc
 endef
 $(foreach L,$(LABELS),$(eval $(call COMPILER_RULE,$(L))))
 
