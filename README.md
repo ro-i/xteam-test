@@ -31,10 +31,11 @@ There are two options for running benchmark binaries:
 1. Run them directly by invoking their corresponding benchmark binary (see `<benchmark binary> -h` for available options).
 2. Run them combined and interleaved by invoking multiple benchmark binaries through `run_bench.sh` (see `run_bench.sh -h` for available options).
 
-Example: `./run_bench.sh -rRq -n1 aomp aomp_dev trunk`
+Example: `./run_bench.sh -rRq -a -n1 aomp aomp_dev trunk`
 - runs every binary for one round (`-n1`)
 - does a quick run, testing only one array size (`-q`)
 - runs reduction tests (`-r`)
+- auto-scale per-test time such that every test runs roughly a minute (min 10 iterations) (`-a`)
 - runs reduction simulation tests (`-R`)
 
 You may also use `LIBOMPTARGET_INFO=16` to get some info on every kernel launch done by OpenMP offloading.
