@@ -36,11 +36,24 @@
 #define NOLOOP 0
 #endif
 
+// Represents the total of threads in the Grid
+#define XTEAM_TOTAL_NUM_THREADS (XTEAM_NUM_TEAMS * XTEAM_NUM_THREADS)
+
+// Benchmark minimum number of measured iterations (as a lower bound in case the
+// test is so slow that it wouldn't get enough iterations in the auto-scale
+// timeframe)
+#define BENCH_MIN_ITERS 10
+// Auto-scale timeframe in seconds. Benchmarks will be repeated until they reach
+// at least this amount of seconds.
+#define AUTO_SCALE_TIME 1.0
+
+// Floating point absolute and relative tolerance for comparison.
+#define FP_ABS_TOL 1e-12
+#define FP_REL_TOL 1e-6
+
 // default alignment for aligned_alloc
 #define ALIGNMENT 128
 
-// Represents the total of threads in the Grid
-#define XTEAM_TOTAL_NUM_THREADS (XTEAM_NUM_TEAMS * XTEAM_NUM_THREADS)
 struct Config {
   bool auto_scale = false;
   bool quick_run = false;
@@ -54,7 +67,7 @@ struct Config {
   std::vector<uint64_t> array_sizes;
 };
 
-template <typename T> T *alloc(uint64_t n) {
+template <typename T> static T *alloc(uint64_t n) {
   if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
     std::cerr << std::format("alloc size overflow n={} sizeof(T)={}\n", n,
                              sizeof(T));
@@ -71,7 +84,7 @@ template <typename T> T *alloc(uint64_t n) {
   return ret;
 }
 
-template <typename T> T *target_alloc(uint64_t n, int devid) {
+template <typename T> static T *target_alloc(uint64_t n, int devid) {
   if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
     std::cerr << std::format("target_alloc size overflow n={} sizeof(T)={}\n",
                              n, sizeof(T));
@@ -119,7 +132,7 @@ template <typename T, RedOp Op> constexpr T red_combine(T a, T b) {
     static_assert(!std::is_same_v<T, T>, "Unsupported red op");
 }
 
-template <RedOp Op> std::string red_op_to_str(std::string_view fmt) {
+template <RedOp Op> static std::string red_op_to_str(std::string_view fmt) {
   if constexpr (Op == RedOp::Sum)
     return std::vformat(fmt, std::make_format_args("sum"));
   else if constexpr (Op == RedOp::Max)
@@ -133,7 +146,7 @@ template <RedOp Op> std::string red_op_to_str(std::string_view fmt) {
 }
 
 template <RedOp Op, ScanMode Mode>
-std::string scan_op_to_str(std::string_view fmt) {
+static std::string scan_op_to_str(std::string_view fmt) {
   std::string ret = red_op_to_str<Op>(fmt);
   if constexpr (Mode == ScanMode::Excl)
     return ret + "_excl";

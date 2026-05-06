@@ -28,8 +28,6 @@ static Config conf;
 // =========================================================================
 // GPU cross-team reduction kernels where the AOMP codegen patterns match.
 // (Excluding min since it doesn't offer more insight than max.)
-// We don't use red_combine here to make sure we're not confusing AOMP's pattern
-// matching.
 // =========================================================================
 
 template <typename T> T red_sum(const T *__restrict in, uint64_t n) {
@@ -58,8 +56,7 @@ T red_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
   return s;
 }
 
-// Reduction as part of a larger kernel that is doing additional work beyond
-// that reduction.
+// Combined reduction (sum and max) in a single loop.
 template <typename T> T red_combined(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   T m = red_identity<T, RedOp::Max>();
@@ -69,7 +66,7 @@ template <typename T> T red_combined(const T *__restrict in, uint64_t n) {
     s += in[i];
     m = std::max(m, in[i]);
   }
-  return static_cast<T>(static_cast<uint64_t>(s) | static_cast<uint64_t>(m));
+  return (s / 2) + (m / 2);
 }
 
 double red_pi(uint64_t n) {
@@ -99,7 +96,7 @@ template <typename T> T red_mult(const T *__restrict in, uint64_t n) {
   return m;
 }
 
-// Non-standard sum isn't detected by AOMP's pattern matching.
+// Indirect reduction (sum) op isn't detected by AOMP's pattern matching.
 template <typename T> T red_indirect(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   auto accumulate = [](T a, T b) { return a + b; };
@@ -109,6 +106,7 @@ template <typename T> T red_indirect(const T *__restrict in, uint64_t n) {
   return s;
 }
 
+// Combined reduction (sum and max) in separate loops.
 template <typename T>
 T red_combined_separate(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
@@ -124,7 +122,7 @@ T red_combined_separate(const T *__restrict in, uint64_t n) {
     for (uint64_t i = 0; i < n; i++)
       m = std::max(m, in[i]);
   }
-  return static_cast<T>(static_cast<uint64_t>(s) | static_cast<uint64_t>(m));
+  return (s / 2) + (m / 2);
 }
 
 // Have a reduction in a kernel that is also doing something completely
@@ -139,7 +137,7 @@ template <typename T> T red_kernel_part(const T *__restrict in, uint64_t n) {
     for (uint64_t i = 0; i < n; i++)
       s += in[i];
 
-      // Just do something, without actually doing anything
+    // Just do something, without actually doing anything
 #pragma omp parallel THREADS
     {
       int tid = omp_get_thread_num();
@@ -277,7 +275,7 @@ std::optional<TimingResult> run_bench_scan(Kernel kernel, T *out, const T *gold,
     times.push_back(d);
     if (conf.auto_scale) {
       total_time += d;
-      if (total_time >= 1.0 && times.size() >= 10)
+      if (total_time >= AUTO_SCALE_TIME && times.size() >= BENCH_MIN_ITERS)
         break;
     }
   }
@@ -308,7 +306,7 @@ std::optional<TimingResult> run_bench_red(Kernel kernel, T gold, uint64_t n,
     times.push_back(d);
     if (conf.auto_scale) {
       total_time += d;
-      if (total_time >= 1.0 && times.size() >= 10)
+      if (total_time >= AUTO_SCALE_TIME && times.size() >= BENCH_MIN_ITERS)
         break;
     }
   }
@@ -365,29 +363,32 @@ void run_scan_simple(Kernel kernel, T *gold, const T *in, T *out, uint64_t n,
 // =========================================================================
 
 template <typename T, bool is_fp> void run_type(std::string_view type_name) {
+  std::optional<TimingResult> r;
+
+#ifdef AOMP
+  SimulationAOMP<T> *simulation = new SimulationAOMP<T>();
+#elif defined(TRUNK)
+  SimulationTrunk<T> *simulation = new SimulationTrunk<T>();
+#elif defined(TRUNK_JD)
+  SimulationTrunkJD<T> *simulation = new SimulationTrunkJD<T>();
+#elif defined(TRUNK_DEV)
+  SimulationTrunkDev<T> *simulation = new SimulationTrunkDev<T>();
+#elif defined(AOMP_DEV)
+  SimulationAOMPDev<T> *simulation = new SimulationAOMPDev<T>();
+#else
+  SimulationNoop<T> *simulation = new SimulationNoop<T>();
+#endif
+  simulation->init_device();
+
   for (uint64_t n : conf.array_sizes) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
     T *out = alloc<T>(n);
     init_data<T, is_fp>(in1, in2, n);
-    std::optional<TimingResult> r;
 
 #pragma omp target enter data map(to : in1[0 : n], in2[0 : n], out[0 : n])
 
-#ifdef AOMP
-    SimulationAOMP<T> *simulation = new SimulationAOMP<T>();
-#elif defined(TRUNK)
-    SimulationTrunk<T> *simulation = new SimulationTrunk<T>();
-#elif defined(TRUNK_JD)
-    SimulationTrunkJD<T> *simulation = new SimulationTrunkJD<T>();
-#elif defined(TRUNK_DEV)
-    SimulationTrunkDev<T> *simulation = new SimulationTrunkDev<T>();
-#elif defined(AOMP_DEV)
-    SimulationAOMPDev<T> *simulation = new SimulationAOMPDev<T>();
-#else
-    SimulationNoop<T> *simulation = new SimulationNoop<T>();
-#endif
-    simulation->init_device();
+    simulation->reset_device();
 
     if (conf.reduction || conf.reduction_simulation) {
       // Cross-team reductions (codegen + simulations)
@@ -454,9 +455,8 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
         // ================================================================
         // combined reduction - in the same loop ...
         // ================================================================
-        gold = static_cast<T>(
-            static_cast<uint64_t>(gold_red<T, RedOp::Sum>(in1, n)) |
-            static_cast<uint64_t>(gold_red<T, RedOp::Max>(in1, n)));
+        gold = (gold_red<T, RedOp::Sum>(in1, n) / 2) +
+               (gold_red<T, RedOp::Max>(in1, n) / 2);
         if (conf.reduction) {
           r = run_bench_red<T, is_fp>(red_combined<T>, gold, n, "red_combined",
                                       simulation, in1);
@@ -469,20 +469,6 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
           r = run_bench_red<T, is_fp>(red_combined_separate<T>, gold, n,
                                       "red_combined_separate", simulation, in1);
           print_result("red_combined_separate", type_name, n, r);
-        }
-      }
-
-      if (std::is_same_v<T, double>) {
-        // ================================================================
-        // reduction computing Pi
-        // ================================================================
-        double gold_pi = std::numbers::pi;
-        uint64_t n = 5000000000;
-        if (conf.reduction) {
-          r = run_bench_red<double, true>(
-              red_pi, gold_pi, n, "red_pi",
-              static_cast<SimulationNoop<double> *>(nullptr));
-          print_result("red_pi", type_name, n, r);
         }
       }
     }
@@ -565,40 +551,57 @@ template <typename T, bool is_fp> void run_type(std::string_view type_name) {
     free(in1);
     free(in2);
     free(out);
-    simulation->free_device();
-    delete simulation;
+  }
+
+  simulation->free_device();
+  delete simulation;
+
+  if (conf.reduction && std::is_same_v<T, double>) {
+    // ================================================================
+    // reduction computing Pi
+    // ================================================================
+    double gold_pi = std::numbers::pi;
+    uint64_t n = 5000000000;
+    if (conf.reduction) {
+      r = run_bench_red<double, true>(
+          red_pi, gold_pi, n, "red_pi",
+          static_cast<SimulationNoop<double> *>(nullptr));
+      print_result("red_pi", type_name, n, r);
+    }
   }
 }
 
 static void usage(const char *argv0) {
   std::cout
       << "Usage: " << argv0
-      << " [-b <int>] [-B <int>] [-q] [-r] [-s] [-R] [-S] [-w <int>] [-h]\n";
-  std::cout << "  -a: auto-scale benchmark iterations such that the runtime "
-               "per test is ~1 second (min 10 iterations)\n";
-  std::cout << "  -b N: Benchmark iterations for reduction\n";
-  std::cout << "  -B N: Benchmark iterations for scan\n";
-  std::cout << "  -q: Quick run (test only one array size)\n";
-  std::cout << "  -r: Run reduction tests\n";
-  std::cout << "  -s: Run scan tests\n";
-  std::cout << "  -R: Run reduction simulations\n";
-  std::cout << "  -S: Run scan simulations\n";
-  std::cout << "  -w N: Warmup iterations\n";
-  std::cout << "  -h: Show this help message\n";
-  std::cout
-      << "\nNote that at least one of -r, -s, -R, -S must be specified.\n";
-  std::cout << "\nPseudocode of how the benchmark binaries run the tests:\n";
-  std::cout << "  for each data type in alphabetical order (e.g. double, int, "
-               "long):\n";
-  std::cout << "    for each array size in numerical order:\n";
-  std::cout << "      for each test type in alphabetical order (first all "
-               "reductions, then all scans):\n";
-  std::cout << "        for each warmup iteration:\n";
-  std::cout << "          run the test and check the result against the gold "
-               "result\n";
-  std::cout << "        for each timed benchmark iteration:\n";
-  std::cout << "          run the test and check the result against the gold "
-               "result\n";
+      << " [-b <int>] [-B <int>] [-q] [-r] [-s] [-R] [-S] [-w <int>] [-h]\n"
+      << "  -a: auto-scale benchmark iterations such that the runtime "
+         "per test is ~"
+      << AUTO_SCALE_TIME << " second (min " << BENCH_MIN_ITERS
+      << " iterations)\n"
+      << "  -b N: Benchmark iterations for reduction\n"
+      << "  -B N: Benchmark iterations for scan\n"
+      << "  -q: Quick run (test only one array size)\n"
+      << "  -r: Run reduction tests\n"
+      << "  -s: Run scan tests\n"
+      << "  -R: Run reduction simulations\n"
+      << "  -S: Run scan simulations\n"
+      << "  -w N: Warmup iterations\n"
+      << "  -h: Show this help message\n"
+
+      << "\nNote that at least one of -r, -s, -R, -S must be specified.\n"
+      << "\nPseudocode of how the benchmark binaries run the tests:\n"
+      << "  for each data type in alphabetical order (e.g. double, int, "
+         "long):\n"
+      << "    for each array size in numerical order:\n"
+      << "      for each test type in alphabetical order (first all "
+         "reductions, then all scans):\n"
+      << "        for each warmup iteration:\n"
+      << "          run the test and check the result against the gold "
+         "result\n"
+      << "        for each timed benchmark iteration:\n"
+      << "          run the test and check the result against the gold "
+         "result\n";
 }
 
 // =========================================================================
@@ -695,11 +698,11 @@ int main(int argc, char **argv) {
   std::cout << "\n--- double ---\n";
   run_type<double, true>("double");
 
-  std::cout << "\n--- int ---\n";
-  run_type<int, false>("int");
+  std::cout << "\n--- uint ---\n";
+  run_type<unsigned, false>("uint");
 
-  std::cout << "\n--- long ---\n";
-  run_type<long, false>("long");
+  std::cout << "\n--- ulong ---\n";
+  run_type<unsigned long, false>("ulong");
 
   return EXIT_SUCCESS;
 }
