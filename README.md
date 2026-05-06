@@ -21,10 +21,9 @@ Compile benchmarks binaries:
 - set `CXX_<label>` in either `Makefile` or a `local.mk` file to the path to the corresponding `clang++`.
 - run either `make` (or `make all`) to compile the benchmark binary for all compilers or
   run `make <label>` to compile the benchmark binary for the compiler identified by `label`.
-- Each compiled benchmark will produce three benchmark binaries:
+- Each compiled benchmark will produce two benchmark binaries:
   - `xteam_bench_<label>_208` (using 208 teams)
   - `xteam_bench_<label>_10400` (using 10400 teams)
-  - `xteam_bench_<label>` (same as the `_208` variant)
 - For other configuration options, see `Makefile` and `common.h`.
 
 There are two options for running benchmark binaries:
