@@ -1,7 +1,10 @@
 results/
 r[0-9]*/
+prof/
+.rocprofv3/
 local.mk
 xteam_bench_*
+result_*
 *.bc
 *.ii
 *.ll
