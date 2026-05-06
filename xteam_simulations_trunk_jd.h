@@ -342,11 +342,12 @@ public:
       std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
   get_all_red_variants() {
     return {
+        // {red_op_to_str<Op>("red_{}_sim"),
+        //  [this](const T *__restrict in, uint64_t n) {
+        //    return this->template red_sim<Op>(in, n);
+        //  }},
+        // {red_op_to_str<Op>("red_{}_sim_v2"),
         {red_op_to_str<Op>("red_{}_sim"),
-         [this](const T *__restrict in, uint64_t n) {
-           return this->template red_sim<Op>(in, n);
-         }},
-        {red_op_to_str<Op>("red_{}_sim_v2"),
          [this](const T *__restrict in, uint64_t n) {
            return this->template red_sim_v2<Op>(in, n);
          }},
@@ -358,11 +359,12 @@ public:
       std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
   get_all_red_dot_variants() {
     return {
+        // {"red_dot_sim",
+        //  [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
+        //    return this->red_dot_sim(a, b, n);
+        //  }},
+        // {"red_dot_sim_v2",
         {"red_dot_sim",
-         [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-           return this->red_dot_sim(a, b, n);
-         }},
-        {"red_dot_sim_v2",
          [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
            return this->red_dot_sim_v2(a, b, n);
          }},
