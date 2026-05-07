@@ -18,57 +18,50 @@
 #define _XTEAMR_SCOPE 0
 #endif
 
-#define _XTEAMR_FUNC(T, TS, ATTR, BODY)                                        \
-  ATTR void __kmpc_xteamr_##TS(                                                \
+#if defined(__AMDGCN__) || defined(__NVPTX__)
+#define _XTEAMR_FUNC(T, TS)                                                    \
+  _INLINE_ATTR_ void __kmpc_xteamr_##TS(                                       \
       T v, T *r_ptr, T *tvs, uint32_t *td, void (*_rf)(T *, T),                \
       void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T rnv,                  \
-      const uint64_t k, const uint32_t numteams, int Scope) BODY
-
-#define _XTEAMR_FUNC_ALL(ATTR, BODY)                                           \
-  _XTEAMR_FUNC(double, d, ATTR, BODY)                                          \
-  _XTEAMR_FUNC(float, f, ATTR, BODY)                                           \
-  _XTEAMR_FUNC(int, i, ATTR, BODY)                                             \
-  _XTEAMR_FUNC(_UI, ui, ATTR, BODY)                                            \
-  _XTEAMR_FUNC(long, l, ATTR, BODY)                                            \
-  _XTEAMR_FUNC(_UL, ul, ATTR, BODY)
-
-#define _XTEAMS_FUNC(T, TS, ATTR, BODY)                                        \
-  ATTR void __kmpc_xteams_##TS(T v, T *result, uint32_t *status,               \
-                               T *aggregates, T *prefixes,                     \
-                               void (*_rf)(T *, T), const T rnv,               \
-                               const uint64_t k, bool is_inclusive) BODY
-
-#define _XTEAMS_FUNC_ALL(ATTR, BODY)                                           \
-  _XTEAMS_FUNC(double, d, ATTR, BODY)                                          \
-  _XTEAMS_FUNC(float, f, ATTR, BODY)                                           \
-  _XTEAMS_FUNC(int, i, ATTR, BODY)                                             \
-  _XTEAMS_FUNC(_UI, ui, ATTR, BODY)                                            \
-  _XTEAMS_FUNC(long, l, ATTR, BODY)                                            \
-  _XTEAMS_FUNC(_UL, ul, ATTR, BODY)
+      const uint64_t k, const uint32_t numteams, int Scope);
+#else
+#define _XTEAMR_FUNC(T, TS)                                                    \
+  inline void __kmpc_xteamr_##TS(                                              \
+      T v, T *r_ptr, T *tvs, uint32_t *td, void (*_rf)(T *, T),                \
+      void (*_rf_lds)(_RF_LDS T *, _RF_LDS T *), const T rnv,                  \
+      const uint64_t k, const uint32_t numteams, int Scope) {}
+#endif
 
 #if defined(__AMDGCN__) || defined(__NVPTX__)
-
-// Device compilation: declarations resolved from device runtime bitcode.
-extern "C" {
-// Reduction functions
-_XTEAMR_FUNC_ALL(_INLINE_ATTR_, ;)
-
-// Scan functions
-_XTEAMS_FUNC_ALL(_INLINE_ATTR_, ;)
-}
-
+#define _XTEAMS_FUNC(T, TS)                                                    \
+  _INLINE_ATTR_ void __kmpc_xteams_##TS(                                       \
+      T v, T *result, uint32_t *status, T *aggregates, T *prefixes,            \
+      void (*_rf)(T *, T), const T rnv, const uint64_t k, bool is_inclusive);
 #else
+#define _XTEAMS_FUNC(T, TS)                                                    \
+  inline void __kmpc_xteams_##TS(T v, T *result, uint32_t *status,             \
+                                 T *aggregates, T *prefixes,                   \
+                                 void (*_rf)(T *, T), const T rnv,             \
+                                 const uint64_t k, bool is_inclusive) {}
+#endif
 
-// Host compilation: empty stubs so the host linker is satisfied.
 extern "C" {
 // Reduction functions
-_XTEAMR_FUNC_ALL(, {})
+_XTEAMR_FUNC(double, d)
+_XTEAMR_FUNC(float, f)
+_XTEAMR_FUNC(int, i)
+_XTEAMR_FUNC(_UI, ui)
+_XTEAMR_FUNC(long, l)
+_XTEAMR_FUNC(_UL, ul)
 
 // Scan functions
-_XTEAMS_FUNC_ALL(, {})
+_XTEAMS_FUNC(double, d)
+_XTEAMS_FUNC(float, f)
+_XTEAMS_FUNC(int, i)
+_XTEAMS_FUNC(_UI, ui)
+_XTEAMS_FUNC(long, l)
+_XTEAMS_FUNC(_UL, ul)
 }
-
-#endif
 
 #undef _XTEAMR_FUNC
 #undef _XTEAMR_FUNC_ALL
@@ -324,7 +317,7 @@ template <typename T> class SimulationAOMPDev : public SimulationAOMPBase<T> {
   }
 
 public:
-  void init_device() {
+  SimulationAOMPDev() {
     assert(d_status == nullptr && d_td == nullptr);
     int devid = omp_get_default_device();
 
@@ -342,16 +335,7 @@ public:
                       devid);
   }
 
-  void reset_device() {
-    int devid = omp_get_default_device();
-    if (d_td)
-      omp_target_memset(d_td, 0, sizeof(uint32_t), devid);
-    if (d_status)
-      omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
-                        devid);
-  }
-
-  void free_device() {
+  ~SimulationAOMPDev() {
     assert(d_status != nullptr && d_td != nullptr);
     int devid = omp_get_default_device();
 
@@ -370,6 +354,20 @@ public:
     d_prefixes = nullptr;
     omp_target_free(d_scan_out, devid);
     d_scan_out = nullptr;
+  }
+
+  SimulationAOMPDev(const SimulationAOMPDev &) = delete;
+  SimulationAOMPDev(SimulationAOMPDev &&) = delete;
+  SimulationAOMPDev &operator=(const SimulationAOMPDev &) = delete;
+  SimulationAOMPDev &operator=(SimulationAOMPDev &&) = delete;
+
+  void reset_device() {
+    int devid = omp_get_default_device();
+    if (d_td)
+      omp_target_memset(d_td, 0, sizeof(uint32_t), devid);
+    if (d_status)
+      omp_target_memset(d_status, 0, sizeof(uint32_t) * (XTEAM_NUM_TEAMS + 1),
+                        devid);
   }
 
   template <RedOp Op>

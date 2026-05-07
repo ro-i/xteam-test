@@ -5,35 +5,27 @@
 # run_bench.sh — Run xteam benchmarks across compilers
 #
 # Usage:
-#   ./run_bench.sh -r aomp_dev aomp trunk [...]
-#   ./run_bench.sh -rRq -n5 -o results aomp_dev aomp trunk [...]
+#   ./run_bench.sh -r red_aomp_208 red_trunk_208 [...]
+#   ./run_bench.sh -rsq -n5 -o results red_trunk_208 red_trunk_10400 [...]
 #
 # The binaries can be run $rounds times in a round-robin way so that changing
-# machine load is distributed as evenly as possible. (Only matters for shared
+# machine load is distributed as evenly as possible. (Matters for shared
 # machines.)
 #
-# Results are stored in results/<label>_round<N>.txt and a combined summary
-# is printed at the end.
+# Results are stored in $results_dir/<binary name>_round<N>.txt and a combined
+# summary is printed at the end. ($results_dir defaults to "results")
 
 set -euo pipefail
-
-# Prefix for binary names
-# The binary name is constructed as $binary_prefix<label>
-binary_prefix=xteam_bench_
 
 collect_only=0
 rounds=1
 results_dir=results
 # Options passed to binaries
-auto_scale=0
-bench_iters_reduction=1000
-bench_iters_scan=10
+bench_iters=-1
 quick_run=0
-reduction=0
-scan=0
-reduction_simulation=0
-scan_simulation=0
-warmup_iters=2
+run=0
+run_sim=0
+warmup_iters=-1
 
 # Add locale-independent thousand separators to make visual number parsing easier
 format_number() {
@@ -41,84 +33,67 @@ format_number() {
 }
 
 usage() {
-  echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-B N] [-q] [-r] [-s] [-R] [-S] [-w N] [-h] compiler_labels..."
+  echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-q] [-r] [-s] [-w N] [-h] binaries..."
   echo "  -c: Only collect results for the given number of rounds and the given labels, don't run any tests"
   echo "  -n rounds: Number of rounds to run for each label (default: $rounds)"
   echo "  -o results_dir: Results directory (default: $results_dir)"
   echo "  -h: Show this help message"
   echo
   echo "Options passed to binaries:"
-  echo "  -b N: Benchmark iterations for reduction (default: $bench_iters_reduction)"
-  echo "  -a: auto-scale benchmark iterations such that the runtime per test is ~1 second (min 10 iterations)"
-  echo "  -B N: Benchmark iterations for scan (default: $bench_iters_scan)"
-  echo "  -q: Quick run (test only one array size) (default: $quick_run)"
-  echo "  -r: Run reduction tests (default: $reduction)"
-  echo "  -s: Run scan tests (default: $scan)"
-  echo "  -R: Run reduction simulations (default: $reduction_simulation)"
-  echo "  -S: Run scan simulations (default: $scan_simulation)"
-  echo "  -w N: Warmup iterations (default: $warmup_iters)"
+  echo "  -b N: Benchmark iterations (default: auto-scaled such that the runtime per test is ~1 second (min 10 iterations))"
+  echo "  -q: Quick run (test only one array size)"
+  echo "  -r: Run non-simulation tests"
+  echo "  -s: Run simulation tests"
+  echo "  -w N: Warmup iterations (default: 2)"
   echo
-  echo "Note that at least one of -r, -s, -R, -S must be specified."
+  echo "Note that at least one of -r or -s must be specified."
   echo
   echo "Pseudocode of how the benchmark binaries run the tests:"
   echo "  for each data type in alphabetical order (e.g. double, int, long):"
   echo "    for each array size in numerical order:"
-  echo "      for each test type in alphabetical order (first all reductions, then all scans):"
+  echo "      for each test:"
   echo "        for each warmup iteration:"
   echo "          run the test and check the result against the gold result"
   echo "        for each timed benchmark iteration:"
   echo "          run the test and check the result against the gold result"
 }
 
-while getopts "acn:o:b:B:qrsRSw:h" opt; do
+while getopts "cn:o:b:qrsw:h" opt; do
   case "$opt" in
-    a) auto_scale=1;;
     c) collect_only=1 ;;
     n) rounds="$OPTARG" ;;
     o) results_dir="$OPTARG" ;;
     h) usage; exit 0 ;;
     # Options passed to binaries
-    b) bench_iters_reduction="$OPTARG" ;;
-    B) bench_iters_scan="$OPTARG" ;;
+    b) bench_iters="$OPTARG" ;;
     q) quick_run=1 ;;
-    r) reduction=1 ;;
-    s) scan=1 ;;
-    R) reduction_simulation=1 ;;
-    S) scan_simulation=1 ;;
+    r) run=1 ;;
+    s) run_sim=1 ;;
     w) warmup_iters="$OPTARG" ;;
     *) usage; exit 1 ;;
   esac
 done
 shift $((OPTIND - 1))
 
-if [[ $collect_only -eq 0 && $reduction -eq 0 && $scan -eq 0 && $reduction_simulation -eq 0 && $scan_simulation -eq 0 ]]; then
-  echo "Error: at least one of -r, -s, -R, -S must be specified" >&2
+if [[ $collect_only -eq 0 && $run -eq 0 && $run_sim -eq 0 ]]; then
+  echo "Error: at least one of -r or -s must be specified" >&2
   usage; exit 1
 fi
 
-labels=("$@")
-if [[ ${#labels[@]} -eq 0 ]]; then
+binaries=("$@")
+if [[ ${#binaries[@]} -eq 0 ]]; then
   usage; exit 1
 fi
-# Derive binary names from labels (add xteam_bench_ prefix)
-binaries=()
-for label in "${labels[@]}"; do
-  binaries+=("$binary_prefix$label")
-done
 
 # ── Run rounds ──────────────────────────────────────────────────────────────
 if [[ $collect_only -eq 0 ]]; then
   # Build the arguments for the binaries
   args=()
-  args+=("-b" "$bench_iters_reduction")
-  args+=("-B" "$bench_iters_scan")
-  [[ $auto_scale -eq 1 ]] && args+=("-a")
+  [[ $bench_iters -gt -1 ]] && args+=("-b" "$bench_iters")
   [[ $quick_run -eq 1 ]] && args+=("-q")
-  [[ $reduction -eq 1 ]] && args+=("-r")
-  [[ $scan -eq 1 ]] && args+=("-s")
-  [[ $reduction_simulation -eq 1 ]] && args+=("-R")
-  [[ $scan_simulation -eq 1 ]] && args+=("-S")
-  args+=("-w" "$warmup_iters")
+  [[ $run -eq 1 ]] && args+=("-r")
+  [[ $run_sim -eq 1 ]] && args+=("-s")
+  [[ $warmup_iters -gt -1 ]] && args+=("-w" "$warmup_iters")
 
   mkdir -p "$results_dir"
 
@@ -126,7 +101,6 @@ if [[ $collect_only -eq 0 ]]; then
   echo "xteam benchmark — round-robin runner"
   echo "═════════════════════════════════════════════════════════════════════"
   echo "Binaries:      ${binaries[*]}"
-  echo "Labels:        ${labels[*]}"
   echo "Arguments:     ${args[*]}"
   echo "Rounds:        $rounds"
   echo "Results:       $results_dir/"
@@ -136,12 +110,10 @@ if [[ $collect_only -eq 0 ]]; then
   for (( round=1; round<=rounds; round++ )); do
     echo "━━━ Round $round / $rounds ━━━"
 
-    for (( i=0; i<${#binaries[@]}; i++ )); do
-      bin="${binaries[$i]}"
-      label="${labels[$i]}"
-      outfile="$results_dir/${label}_round${round}.txt"
+    for bin in "${binaries[@]}"; do
+      outfile="$results_dir/${bin}_round${round}.txt"
 
-      echo "  Running $label (round $round)..."
+      echo "  Running $bin (round $round)..."
       if ! stdbuf -oL -eL "./$bin" "${args[@]}" 2>&1 | tee "$outfile"; then
         echo "  WARNING: $bin exited with non-zero status" >&2
       fi
@@ -156,18 +128,28 @@ echo "Summary: best MB/s and avg MB/s across all rounds (higher is better)"
 echo "═════════════════════════════════════════════════════════════════════"
 echo
 
-# Header
+# Two-row header: binary names right-aligned over their best/avg sub-columns.
+# Each binary's best/avg sub-columns together span 2 + 15 + 2 + 15 = 34 chars.
+# If your binary name is longer than 34 chars, this is an issue at the moment :)
+# (it will just overflow)
+# FIrst, skip the 24 + 1 + 8 + 1 + 15 = 49 chars of the test name, type, and N
+# columns.
+printf "%49s" ""
+for bin in "${binaries[@]}"; do
+  printf "%34s" "$bin"
+done
+echo
 printf "%-24s %-8s %15s" "test" "type" "N"
-for label in "${labels[@]}"; do
-  printf "  %15s  %15s" "$label (best)" "$label (avg)"
+for bin in "${binaries[@]}"; do
+  printf "  %15s  %15s" "best" "avg"
 done
 echo
 
-# Collect and form a set of all test lines from round 1 of all labels to get the
-# test list.
-# (Not all labels might have the same tests, so we need to collect all test
-# lines from all labels.)
-mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${labels[@]}")
+# Collect and form a set of all test lines from round 1 of all binaries to get
+# the test list.
+# (Not all binaries might have the same tests, so we need to collect all test
+# lines from all binaries.)
+mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${binaries[@]}")
 test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9,]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
 
 extract_numeric_data() {
@@ -216,8 +198,8 @@ extract_numeric_data() {
 echo "$test_spec" | while read -r test_name type_name n_val; do
   printf "%-24s %-8s %15s" "$test_name" "$type_name" "$n_val"
 
-  for label in "${labels[@]}"; do
-    mapfile -t file_list < <(printf "${results_dir}/${label}_round%d.txt\n" $(seq 1 "$rounds"))
+  for bin in "${binaries[@]}"; do
+    mapfile -t file_list < <(printf "${results_dir}/${bin}_round%d.txt\n" $(seq 1 "$rounds"))
 
     extract_numeric_data 1
     # Some tests don't do memory accesses and thus have 0 MB/s. In these cases,

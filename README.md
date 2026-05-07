@@ -1,4 +1,4 @@
-The code in this repository tests and compares implementations of OpenMP cross-team reductions and scans across different compilers for correctness and performance.
+The code in this repository tests and compares implementations of cross-team operations such as OpenMP reductions and scans across different compilers for correctness and performance.
 The tests include
 - high-level tests using the corresponding OpenMP pragmas
 - simulations that don't depend on the reduction/scan-specific codegen and
@@ -19,23 +19,25 @@ Currently used compilers (with varying levels of support), by their label:
 
 Compile benchmarks binaries:
 - set `CXX_<label>` in either `Makefile` or a `local.mk` file to the path to the corresponding `clang++`.
-- run either `make` (or `make all`) to compile the benchmark binary for all compilers or
-  run `make <label>` to compile the benchmark binary for the compiler identified by `label`.
-- Each compiled benchmark will produce two benchmark binaries:
-  - `xteam_bench_<label>_208` (using 208 teams)
-  - `xteam_bench_<label>_10400` (using 10400 teams)
+- run either `make` (or `make all`) to compile the benchmark binaries for all combinations of compilers, operations, and team numbers.
+- or,
+  - run `make <op>` to compile the benchmark binaries for all combinations of compilers and team numbers for the operation identified by `op`.
+  - run `make <label>` to compile the benchmark binaries for all combinations of operations and team numbers for the compiler identified by `label`.
+  - run `make <op>_<label>` to compile the benchmark binaries for all team numbers for the operation and compiler identified by `op` and `label`.
+- Each compiled benchmark will produce one benchmark binary in the naming format `<op>_<label>_<teams>`, e.g.:
+  - `red_aomp_208` (reduction for `aomp` using 208 teams)
+  - `scan_trunk_dev_10400` (scan for `trunk_dev` using 10400 teams)
 - For other configuration options, see `Makefile` and `common.h`.
 
 There are two options for running benchmark binaries:
 1. Run them directly by invoking their corresponding benchmark binary (see `<benchmark binary> -h` for available options).
 2. Run them combined and interleaved by invoking multiple benchmark binaries through `run_bench.sh` (see `run_bench.sh -h` for available options).
 
-Example: `./run_bench.sh -rRq -a -n1 aomp aomp_dev trunk`
+Example: `./run_bench.sh -rsq -n1 aomp aomp_dev trunk`
 - runs every binary for one round (`-n1`)
 - does a quick run, testing only one array size (`-q`)
-- runs reduction tests (`-r`)
-- auto-scale per-test time such that every test runs roughly a minute (min 10 iterations) (`-a`)
-- runs reduction simulation tests (`-R`)
+- runs non-simulation tests (`-r`)
+- runs simulation tests (`-s`)
 
 You may also use `LIBOMPTARGET_INFO=16` to get some info on every kernel launch done by OpenMP offloading.
 

@@ -28,35 +28,30 @@
 #define _INLINE_ATTR_ __attribute__((flatten, always_inline))
 #define _RF_LDS volatile __attribute__((address_space(3)))
 
-#define _REDUCTION_FUNC(T, OP, TS, BODY)                                       \
-  void __kmpc_rfun_##OP##_##TS(T *val, T otherval) BODY;                       \
-  void __kmpc_rfun_##OP##_lds_##TS(_RF_LDS T *val, _RF_LDS T *otherval) BODY
-
-#define _REDUCTION_FUNC_ALL(OP, BODY)                                          \
-  _REDUCTION_FUNC(double, OP, d, BODY)                                         \
-  _REDUCTION_FUNC(float, OP, f, BODY)                                          \
-  _REDUCTION_FUNC(int, OP, i, BODY)                                            \
-  _REDUCTION_FUNC(_UI, OP, ui, BODY)                                           \
-  _REDUCTION_FUNC(long, OP, l, BODY)                                           \
-  _REDUCTION_FUNC(_UL, OP, ul, BODY)
-
 #if defined(__AMDGCN__) || defined(__NVPTX__)
-
-extern "C" {
-_REDUCTION_FUNC_ALL(sum, ;)
-_REDUCTION_FUNC_ALL(max, ;)
-_REDUCTION_FUNC_ALL(min, ;)
-}
-
+#define _REDUCTION_FUNC(T, OP, TS)                                             \
+  void __kmpc_rfun_##OP##_##TS(T *val, T otherval);                            \
+  void __kmpc_rfun_##OP##_lds_##TS(_RF_LDS T *val, _RF_LDS T *otherval);
 #else
+#define _REDUCTION_FUNC(T, OP, TS)                                             \
+  inline void __kmpc_rfun_##OP##_##TS(T *val, T otherval) {}                   \
+  inline void __kmpc_rfun_##OP##_lds_##TS(_RF_LDS T *val,                      \
+                                          _RF_LDS T *otherval) {}
+#endif
+
+#define _REDUCTION_FUNC_ALL(OP)                                                \
+  _REDUCTION_FUNC(double, OP, d)                                               \
+  _REDUCTION_FUNC(float, OP, f)                                                \
+  _REDUCTION_FUNC(int, OP, i)                                                  \
+  _REDUCTION_FUNC(_UI, OP, ui)                                                 \
+  _REDUCTION_FUNC(long, OP, l)                                                 \
+  _REDUCTION_FUNC(_UL, OP, ul)
 
 extern "C" {
-_REDUCTION_FUNC_ALL(sum, {})
-_REDUCTION_FUNC_ALL(max, {})
-_REDUCTION_FUNC_ALL(min, {})
+_REDUCTION_FUNC_ALL(sum)
+_REDUCTION_FUNC_ALL(max)
+_REDUCTION_FUNC_ALL(min)
 }
-
-#endif
 
 // =========================================================================
 // Common declarations shared by TRUNK simulations
@@ -76,8 +71,8 @@ using ShuffleReductFnTy = void (*)(void *rhsData, int16_t lane_id,
                                    int16_t lane_offset, int16_t shortCircuit);
 using ListGlobalFnTy = void (*)(void *buffer, int idx, void *reduce_data);
 
-#if defined(__AMDGCN__) || defined(__NVPTX__)
 extern "C" {
+#if defined(__AMDGCN__) || defined(__NVPTX__)
 int32_t __kmpc_nvptx_parallel_reduce_nowait_v2(void *Loc,
                                                uint64_t reduce_data_size,
                                                void *reduce_data,
@@ -87,20 +82,19 @@ int32_t __kmpc_shuffle_int32(int32_t val, int16_t delta, int16_t size);
 int64_t __kmpc_shuffle_int64(int64_t val, int16_t delta, int16_t size);
 void __kmpc_barrier_simple_spmd(void *Loc, int32_t TId);
 uint32_t __kmpc_get_hardware_thread_id_in_block();
-}
 #else
-extern "C" {
-int32_t __kmpc_nvptx_parallel_reduce_nowait_v2(void *, uint64_t, void *,
-                                               ShuffleReductFnTy shflFct,
-                                               InterWarpCopyFnTy cpyFct) {
+inline int32_t
+__kmpc_nvptx_parallel_reduce_nowait_v2(void *, uint64_t, void *,
+                                       ShuffleReductFnTy shflFct,
+                                       InterWarpCopyFnTy cpyFct) {
   return 0;
 }
-int32_t __kmpc_shuffle_int32(int32_t, int16_t, int16_t) { return 0; }
-int64_t __kmpc_shuffle_int64(int64_t, int16_t, int16_t) { return 0; }
-void __kmpc_barrier_simple_spmd(void *, int32_t) {}
-uint32_t __kmpc_get_hardware_thread_id_in_block() { return 0; }
-}
+inline int32_t __kmpc_shuffle_int32(int32_t, int16_t, int16_t) { return 0; }
+inline int64_t __kmpc_shuffle_int64(int64_t, int16_t, int16_t) { return 0; }
+inline void __kmpc_barrier_simple_spmd(void *, int32_t) {}
+inline uint32_t __kmpc_get_hardware_thread_id_in_block() { return 0; }
 #endif
+}
 
 // =========================================================================
 // Device helpers and codegen-simulated callbacks
@@ -219,93 +213,44 @@ static void gl_reduce(void *buf, int idx, void *rd) {
 #pragma omp end declare target
 
 // =========================================================================
-// Simulation concept — compile-time contract for simulation types, avoids
-// virtual dispatch and thus allows member functions to have additional template
-// parameters.
+// Simulation concepts
+//
+//   SimulationLike      — common definitions
+//   RedSimulationLike   — reduction variant getters
+//                         variant getters.
+//   ScanSimulationLike  — scan variant getters
 // =========================================================================
-template <typename T> struct SimulationBase;
-
 template <typename S, typename T>
-concept SimulationLike = std::derived_from<S, SimulationBase<T>>;
-
-// =========================================================================
-// Base class providing default (no-op) implementations.
-// Derived classes hide the methods they wish to override.
-// =========================================================================
-template <typename T> class SimulationBase {
-public:
-  void init_device() {}
-  void reset_device() {}
-  void free_device() {}
-
-  // Return descriptions and implementations for all supported reduction and
-  // scan variants.  Return empty vectors if no variants are supported for the
-  // given operation.  Be non-virtual to allow RedOp as a template parameter.
-
-  // Get all supported versions of reduce ...
-  template <RedOp Op>
-  std::vector<
-      std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
-  get_all_red_variants() {
-    return {};
-  }
-
-  // ... and reduce_dot.
-  std::vector<std::pair<
-      std::string,
-      std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
-  get_all_red_dot_variants() {
-    return {};
-  }
-
-  // Get all supported versions of scan ...
-  template <RedOp Op>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_incl_variants() {
-    return {};
-  }
-
-  template <RedOp Op>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_excl_variants() {
-    return {};
-  }
-
-  template <RedOp Op, ScanMode Mode>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_variants() {
-    if constexpr (Mode == ScanMode::Incl)
-      return get_all_scan_incl_variants<Op>();
-    else if constexpr (Mode == ScanMode::Excl)
-      return get_all_scan_excl_variants<Op>();
-    else
-      static_assert(!std::is_same_v<T, T>, "Unsupported scan mode");
-  }
-
-  // ... and scan_dot.
-  std::vector<std::pair<
-      std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                      T *__restrict, uint64_t)>>>
-  get_all_scan_dot_excl_variants() {
-    return {};
-  }
-
-  std::vector<std::pair<
-      std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                      T *__restrict, uint64_t)>>>
-  get_all_scan_dot_incl_variants() {
-    return {};
-  }
+concept SimulationLike = requires(S s) {
+  { s.reset_device() } -> std::same_as<void>;
 };
 
+template <typename S, typename T>
+concept RedSimulationLike = SimulationLike<S, T> && requires(S s) {
+  s.template get_all_red_variants<RedOp::Sum>();
+  s.get_all_red_dot_variants();
+};
+
+template <typename S, typename T>
+concept ScanSimulationLike = SimulationLike<S, T> && requires(S s) {
+  s.template get_all_scan_incl_variants<RedOp::Sum>();
+  s.template get_all_scan_excl_variants<RedOp::Sum>();
+  s.get_all_scan_dot_incl_variants();
+  s.get_all_scan_dot_excl_variants();
+};
+
+template <RedOp Op, ScanMode Mode, typename Sim>
+auto get_all_scan_variants(Sim &sim) {
+  if constexpr (Mode == ScanMode::Incl)
+    return sim.template get_all_scan_incl_variants<Op>();
+  else if constexpr (Mode == ScanMode::Excl)
+    return sim.template get_all_scan_excl_variants<Op>();
+  else
+    static_assert(!std::is_same_v<Sim, Sim>, "Unsupported scan mode");
+}
+
 // Intermediate base for AOMP-based simulations
-template <typename T> class SimulationAOMPBase : public SimulationBase<T> {
+template <typename T> class SimulationAOMPBase {
 public:
   static constexpr void (*get_rfun_sum_func())(T *, T) {
     if constexpr (std::is_same_v<T, double>)
@@ -437,8 +382,52 @@ public:
   }
 };
 
-// Intermediate base for trunk-based simulations
-template <typename T> class SimulationTrunkBase : public SimulationBase<T> {};
-
 // No-op simulation used when no specific backend is selected.
-template <typename T> class SimulationNoop : public SimulationBase<T> {};
+template <typename T> class SimulationNoop {
+public:
+  void reset_device() {}
+
+  template <RedOp>
+  std::vector<
+      std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
+  get_all_red_variants() {
+    return {};
+  }
+
+  std::vector<std::pair<
+      std::string,
+      std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
+  get_all_red_dot_variants() {
+    return {};
+  }
+
+  template <RedOp>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_incl_variants() {
+    return {};
+  }
+
+  template <RedOp>
+  std::vector<std::pair<
+      std::string,
+      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
+  get_all_scan_excl_variants() {
+    return {};
+  }
+
+  std::vector<std::pair<
+      std::string, std::function<void(const T *__restrict, const T *__restrict,
+                                      T *__restrict, uint64_t)>>>
+  get_all_scan_dot_incl_variants() {
+    return {};
+  }
+
+  std::vector<std::pair<
+      std::string, std::function<void(const T *__restrict, const T *__restrict,
+                                      T *__restrict, uint64_t)>>>
+  get_all_scan_dot_excl_variants() {
+    return {};
+  }
+};

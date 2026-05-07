@@ -53,15 +53,16 @@ void __kmpc_reduction_inter_warp_copy(void *reduce_data, uint32_t size);
 }
 #else
 extern "C" {
-void __kmpc_reduction_teams_lvl1(void *, void *, void *,
-                                 ListGlobalFnTy lgcpyFct) {}
-int32_t __kmpc_reduction_teams_lvl2(void *, void *, ShuffleReductFnTy shflFct,
-                                    InterWarpCopyFnTy cpyFct,
-                                    ListGlobalFnTy glcpyFct,
-                                    ListGlobalFnTy glredFct) {
+inline void __kmpc_reduction_teams_lvl1(void *, void *, void *,
+                                        ListGlobalFnTy lgcpyFct) {}
+inline int32_t __kmpc_reduction_teams_lvl2(void *, void *,
+                                           ShuffleReductFnTy shflFct,
+                                           InterWarpCopyFnTy cpyFct,
+                                           ListGlobalFnTy glcpyFct,
+                                           ListGlobalFnTy glredFct) {
   return 0;
 }
-void __kmpc_reduction_inter_warp_copy(void *, uint32_t) {}
+inline void __kmpc_reduction_inter_warp_copy(void *, uint32_t) {}
 }
 #endif
 
@@ -103,7 +104,7 @@ template <typename T> static void lvl2_warp_copy(void *rd, int32_t /*nw*/) {
 //           reduces the global buffer via __kmpc_reduction_teams_lvl2.
 // =========================================================================
 
-template <typename T> class SimulationTrunkJD : public SimulationTrunkBase<T> {
+template <typename T> class SimulationTrunkJD {
   void *d_gbuf = nullptr;
 
   // =========================================================================
@@ -323,19 +324,24 @@ template <typename T> class SimulationTrunkJD : public SimulationTrunkBase<T> {
   }
 
 public:
-  void init_device() {
+  SimulationTrunkJD() {
     assert(d_gbuf == nullptr);
     int devid = omp_get_default_device();
     d_gbuf = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
   }
 
-  void reset_device() {}
-
-  void free_device() {
+  ~SimulationTrunkJD() {
     assert(d_gbuf != nullptr);
     omp_target_free(d_gbuf, omp_get_default_device());
     d_gbuf = nullptr;
   }
+
+  SimulationTrunkJD(const SimulationTrunkJD &) = delete;
+  SimulationTrunkJD(SimulationTrunkJD &&) = delete;
+  SimulationTrunkJD &operator=(const SimulationTrunkJD &) = delete;
+  SimulationTrunkJD &operator=(SimulationTrunkJD &&) = delete;
+
+  void reset_device() {}
 
   template <RedOp Op>
   std::vector<
@@ -371,34 +377,4 @@ public:
     };
   }
 
-  template <RedOp Op>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_incl_variants() {
-    return {};
-  }
-
-  template <RedOp Op>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_excl_variants() {
-    return {};
-  }
-
-  std::vector<std::pair<
-      std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                      T *__restrict, uint64_t)>>>
-  get_all_scan_dot_incl_variants() {
-    return {};
-  }
-
-  std::vector<std::pair<
-      std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                      T *__restrict, uint64_t)>>>
-  get_all_scan_dot_excl_variants() {
-    return {};
-  }
-
-}; // class SimulationTrunk
+}; // class SimulationTrunkJD
