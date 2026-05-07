@@ -13,25 +13,8 @@
 #include "common.h"
 #include "xteam_simulations_common.h"
 
-// =========================================================================
-// Layout-compatible replica of KernelLaunchEnvironmentTy from
-// offload/include/Shared/Environment.h.
-// __kmpc_gpu_xteam_reduce_nowait reads the cross-team buffer from
-// state::getKernelLaunchEnvironment().ReductionBuffer; since the simulation
-// kernels do not use a `reduction(...)` clause, the plugin leaves that slot
-// null. The simulation therefore writes its own gbuf into the slot through
-// this layout-compatible replica before calling the reduction runtime. The
-// remaining fields preserve ABI layout so we don't clobber neighbouring
-// state (DynCGroupMem*, ReductionTeamsDone, ...).
-// =========================================================================
-
-struct SimKernelLaunchEnvTy {
-  void *ReductionBuffer = nullptr;
-  void *DynCGroupMemFbPtr = nullptr;
-  uint32_t ReductionTeamsDone = 0;
-  uint32_t DynCGroupMemSize = 0;
-  uint8_t DynCGroupMemFb = 0;
-};
+// Matches OMPIRBuilder's default ReductionBufNum (1024)
+#define _TRUNK_NUM_RECORDS 1024
 
 // =========================================================================
 // Runtime API declarations
@@ -40,67 +23,57 @@ struct SimKernelLaunchEnvTy {
 
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 extern "C" {
-int32_t __kmpc_gpu_xteam_reduce_nowait(void *Loc, void *reduce_data,
-                                       ShuffleReductFnTy shflFct,
-                                       InterWarpCopyFnTy cpyFct,
-                                       ListGlobalFnTy lgcpyFct,
-                                       ListGlobalFnTy glcpyFct,
-                                       ListGlobalFnTy glredFct);
+int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
+    void *Loc, void *GlobalBuffer, uint32_t num_of_records,
+    uint64_t reduce_data_size, void *reduce_data, ShuffleReductFnTy shflFct,
+    InterWarpCopyFnTy cpyFct, ListGlobalFnTy lgcpyFct, ListGlobalFnTy lgredFct,
+    ListGlobalFnTy glcpyFct, ListGlobalFnTy glredFct);
 }
 #else
 extern "C" {
-int32_t __kmpc_gpu_xteam_reduce_nowait(
-    void *, void *, ShuffleReductFnTy shflFct, InterWarpCopyFnTy cpyFct,
-    ListGlobalFnTy lgcpyFct, ListGlobalFnTy glcpyFct, ListGlobalFnTy glredFct) {
+inline int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
+    void *, void *, uint32_t, uint64_t, void *, ShuffleReductFnTy shflFct,
+    InterWarpCopyFnTy cpyFct, ListGlobalFnTy lgcpyFct, ListGlobalFnTy lgredFct,
+    ListGlobalFnTy glcpyFct, ListGlobalFnTy glredFct) {
   return 0;
 }
 }
 #endif
 
-// Re-declare ompx::state::getKernelLaunchEnvironment() returning a reference
-// to our layout-compatible replica. C++ Itanium mangling does not encode the
-// return type, so this resolves at link time to the real runtime symbol
-// (ompx::state::getKernelLaunchEnvironment) in the device image. On the host
-// side we provide an inline dummy so the host fallback compilation still
-// links; the stub is never reached in practice because the kernels only run
-// on device.
-#pragma omp begin declare target
-namespace ompx::state {
-#if defined(__AMDGCN__) || defined(__NVPTX__)
-SimKernelLaunchEnvTy &getKernelLaunchEnvironment();
-#else
-inline SimKernelLaunchEnvTy &getKernelLaunchEnvironment() {
-  static SimKernelLaunchEnvTy Dummy;
-  return Dummy;
-}
-#endif
-} // namespace ompx::state
+// =========================================================================
+// Device helpers and codegen-simulated callbacks
+// Completes the definitions from xteam_simulations_common.h
+// =========================================================================
 
-// Helper that writes `buf` into the runtime KLE's ReductionBuffer slot.
-// Wrapping the store in a plain function keeps OpenMP's implicit capture
-// machinery from trying to map the `KLE.ReductionBuffer` lvalue out of the
-// target region (which fails with "expected addressable lvalue in 'map'
-// clause"). From the callsite's perspective this is just a function call
-// taking a device pointer argument.
-static inline void __trunk_sim_set_kle_reduction_buffer(void *buf) {
-  ompx::state::getKernelLaunchEnvironment().ReductionBuffer = buf;
+#pragma omp begin declare target
+
+namespace trunk_sim {
+
+// --- 4. _omp_reduction_list_to_global_reduce_func (ListGlobalFnTy) -------
+//   buf[idx] = combine(buf[idx], *priv)
+template <typename T, RedOp Op>
+static void lg_reduce(void *buf, int idx, void *rd) {
+  T *b = static_cast<T *>(buf);
+  b[idx] = red_combine<T, Op>(b[idx], **reinterpret_cast<T **>(rd));
 }
+
+} // namespace trunk_sim
 #pragma omp end declare target
 
 // =========================================================================
-// SimulationTrunkDev — simulates the trunk LLVM cross-team reduction.
+// SimulationTrunk — simulates the trunk LLVM cross-team reduction.
 //
 // Codegen for `#pragma omp target teams distribute parallel for reduction`
 // generates two runtime calls:
 //   1.  __kmpc_nvptx_parallel_reduce_nowait_v2  — within-team reduction
 //       (warp shuffle + inter-warp copy so that thread 0 holds the team
 //       result).
-//   2.  __kmpc_gpu_xteam_reduce_nowait      — cross-team reduction
+//   2.  __kmpc_nvptx_teams_reduce_nowait_v2     — cross-team reduction
 //       (each team's thread 0 writes to a global buffer; the last team
 //       arriving combines all entries via warp/cross-warp reduction).
 // =========================================================================
 
-template <typename T> class SimulationTrunkDev : public SimulationTrunkBase<T> {
+template <typename T> class SimulationTrunk {
   void *d_gbuf = nullptr;
 
   // =========================================================================
@@ -147,15 +120,13 @@ template <typename T> class SimulationTrunkDev : public SimulationTrunkBase<T> {
         __trunk_sim_barrier();
       }
 
-      // Cross-team reduction on the accumulated team result.
-      // Point the runtime's KLE at gbuf so __kmpc_gpu_xteam_reduce_nowait
-      // can pick it up from state::getKernelLaunchEnvironment().
-      __trunk_sim_set_kle_reduction_buffer(gbuf);
+      // Cross-team reduction on the accumulated team result
       void *rl[1] = {&team_priv};
-      int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
-          nullptr, rl, trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
-          trunk_sim::lg_copy<T>, trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, Op>);
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
 
       if (winner == 1)
         result = red_combine<T, Op>(result, team_priv);
@@ -187,23 +158,19 @@ template <typename T> class SimulationTrunkDev : public SimulationTrunkBase<T> {
       void *rl[1] = {&priv};
 
       // Step 1: within-team (parallel) reduction
-      int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-          nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, Op>,
-          trunk_sim::warp_copy<T>);
+      __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
+                                             trunk_sim::shfl_reduce<T, Op>,
+                                             trunk_sim::warp_copy<T>);
 
-      // Step 2: cross-team (teams) reduction. Mask non-master lanes to
-      // identity so they don't contaminate the last team's block reduce.
-      // Seed the runtime KLE's ReductionBuffer with gbuf.
-      T team_priv = is_master ? priv : rnv;
-      void *rl_teams[1] = {&team_priv};
-      __trunk_sim_set_kle_reduction_buffer(gbuf);
-      int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
-          nullptr, rl_teams, trunk_sim::shfl_reduce<T, Op>,
-          trunk_sim::warp_copy<T>, trunk_sim::lg_copy<T>, trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, Op>);
+      // Step 2: cross-team (teams) reduction
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
 
       if (winner == 1)
-        result = red_combine<T, Op>(result, team_priv);
+        result = red_combine<T, Op>(result, priv);
     }
 
     return result;
@@ -275,23 +242,19 @@ template <typename T> class SimulationTrunkDev : public SimulationTrunkBase<T> {
         void *rl[1] = {&priv};
 
         // Step 1: within-team (parallel) reduction
-        int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, Op>,
-            trunk_sim::warp_copy<T>);
+        __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
+                                               trunk_sim::shfl_reduce<T, Op>,
+                                               trunk_sim::warp_copy<T>);
 
-        // Step 2: cross-team (teams) reduction. Mask non-master lanes to
-        // identity to avoid contamination (see red_sim_v2).
-        // Seed the runtime KLE's ReductionBuffer with gbuf.
-        T team_priv = is_master ? priv : rnv;
-        void *rl_teams[1] = {&team_priv};
-        __trunk_sim_set_kle_reduction_buffer(gbuf);
-        int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
-            nullptr, rl_teams, trunk_sim::shfl_reduce<T, Op>,
-            trunk_sim::warp_copy<T>, trunk_sim::lg_copy<T>,
+        // Step 2: cross-team (teams) reduction
+        int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+            nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+            trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
+            trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
             trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
 
         if (winner == 1)
-          result = red_combine<T, Op>(result, team_priv);
+          result = red_combine<T, Op>(result, priv);
       }
     }
 
@@ -335,13 +298,12 @@ template <typename T> class SimulationTrunkDev : public SimulationTrunkBase<T> {
         __trunk_sim_barrier();
       }
 
-      // Seed the runtime KLE's ReductionBuffer with gbuf.
-      __trunk_sim_set_kle_reduction_buffer(gbuf);
       void *rl[1] = {&team_priv};
-      int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
-          nullptr, rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::warp_copy<T>, trunk_sim::lg_copy<T>, trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, RedOp::Sum>);
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, RedOp::Sum>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, RedOp::Sum>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
         result += team_priv;
@@ -364,41 +326,42 @@ template <typename T> class SimulationTrunkDev : public SimulationTrunkBase<T> {
         priv += a[i] * b[i];
 
       void *rl[1] = {&priv};
-      int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
+      __kmpc_nvptx_parallel_reduce_nowait_v2(
           nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
           trunk_sim::warp_copy<T>);
 
-      // Mask non-master lanes to identity (see red_sim_v2).
-      // Seed the runtime KLE's ReductionBuffer with gbuf.
-      T team_priv = is_master ? priv : rnv;
-      void *rl_teams[1] = {&team_priv};
-      __trunk_sim_set_kle_reduction_buffer(gbuf);
-      int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
-          nullptr, rl_teams, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::warp_copy<T>, trunk_sim::lg_copy<T>, trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, RedOp::Sum>);
+      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
+          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
+          trunk_sim::shfl_reduce<T, RedOp::Sum>, trunk_sim::warp_copy<T>,
+          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, RedOp::Sum>,
+          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
-        result += team_priv;
+        result += priv;
     }
 
     return result;
   }
 
 public:
-  void init_device() {
+  SimulationTrunk() {
     assert(d_gbuf == nullptr);
     int devid = omp_get_default_device();
-    d_gbuf = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
+    d_gbuf = target_alloc<T>(_TRUNK_NUM_RECORDS, devid);
   }
 
-  void reset_device() {}
-
-  void free_device() {
+  ~SimulationTrunk() {
     assert(d_gbuf != nullptr);
     omp_target_free(d_gbuf, omp_get_default_device());
     d_gbuf = nullptr;
   }
+
+  SimulationTrunk(const SimulationTrunk &) = delete;
+  SimulationTrunk(SimulationTrunk &&) = delete;
+  SimulationTrunk &operator=(const SimulationTrunk &) = delete;
+  SimulationTrunk &operator=(SimulationTrunk &&) = delete;
+
+  void reset_device() {}
 
   template <RedOp Op>
   std::vector<
@@ -430,42 +393,11 @@ public:
         //  [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
         //    return this->red_dot_sim(a, b, n);
         //  }},
-        // {"red_dot_sim_v2",
         {"red_dot_sim",
          [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
            return this->red_dot_sim_v2(a, b, n);
          }},
     };
-  }
-
-  template <RedOp Op>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_incl_variants() {
-    return {};
-  }
-
-  template <RedOp Op>
-  std::vector<std::pair<
-      std::string,
-      std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
-  get_all_scan_excl_variants() {
-    return {};
-  }
-
-  std::vector<std::pair<
-      std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                      T *__restrict, uint64_t)>>>
-  get_all_scan_dot_incl_variants() {
-    return {};
-  }
-
-  std::vector<std::pair<
-      std::string, std::function<void(const T *__restrict, const T *__restrict,
-                                      T *__restrict, uint64_t)>>>
-  get_all_scan_dot_excl_variants() {
-    return {};
   }
 
 }; // class SimulationTrunk

@@ -3,7 +3,8 @@ r[0-9]*/
 prof/
 .rocprofv3/
 local.mk
-xteam_bench_*
+red_*
+scan_*
 result_*
 *.bc
 *.ii
@@ -13,3 +14,6 @@ result_*
 *.s
 *.tmp
 *.code-workspace
+# I know this is stupid, but somtimes I just need a quick script for sth and
+# don't want to pay attention to not committing it :)
+t.sh
