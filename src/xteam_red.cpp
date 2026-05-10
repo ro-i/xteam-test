@@ -173,6 +173,8 @@ run_bench_red(Kernel kernel, T gold, uint64_t n, std::string_view label,
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters; t++) {
     if (sim)
       sim->reset_device();
+    if (conf.evict_cache)
+      evict_device_cache();
     auto t1 = Clock::now();
     T result = kernel(inputs..., n);
     auto t2 = Clock::now();

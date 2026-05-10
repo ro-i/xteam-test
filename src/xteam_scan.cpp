@@ -176,6 +176,8 @@ run_bench_scan(Kernel kernel, T *out, const T *gold, uint64_t n,
   for (int t = 0; t < conf.warmup_iters + conf.bench_iters; t++) {
     if (sim)
       sim->reset_device();
+    if (conf.evict_cache)
+      evict_device_cache();
     auto t1 = Clock::now();
     kernel(inputs..., out, n);
     auto t2 = Clock::now();

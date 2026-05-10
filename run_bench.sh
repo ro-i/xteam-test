@@ -22,10 +22,12 @@ rounds=1
 results_dir=results
 # Options passed to binaries
 bench_iters=-1
+evict_cache=0
 quick_run=0
 run=0
 run_sim=0
 warmup_iters=-1
+custom_quick_array_size=0
 
 # Add locale-independent thousand separators to make visual number parsing easier
 format_number() {
@@ -33,7 +35,7 @@ format_number() {
 }
 
 usage() {
-  echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-q] [-r] [-s] [-w N] [-h] binaries..."
+  echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-e] [-q] [-Q N] [-r] [-s] [-w N] [-h] binaries..."
   echo "  -c: Only collect results for the given number of rounds and the given labels, don't run any tests"
   echo "  -n rounds: Number of rounds to run for each label (default: $rounds)"
   echo "  -o results_dir: Results directory (default: $results_dir)"
@@ -41,7 +43,9 @@ usage() {
   echo
   echo "Options passed to binaries:"
   echo "  -b N: Benchmark iterations (default: auto-scaled such that the runtime per test is ~1 second (min 10 iterations))"
+  echo "  -e: Evict the GPU L2/MALL cache before each iteration (cold-cache mode)"
   echo "  -q: Quick run (test only one array size)"
+  echo "  -Q N: Quick run with custom array size N"
   echo "  -r: Run non-simulation tests"
   echo "  -s: Run simulation tests"
   echo "  -w N: Warmup iterations (default: 2)"
@@ -58,7 +62,7 @@ usage() {
   echo "          run the test and check the result against the gold result"
 }
 
-while getopts "cn:o:b:qrsw:h" opt; do
+while getopts "cn:o:b:eqQ:rsw:h" opt; do
   case "$opt" in
     c) collect_only=1 ;;
     n) rounds="$OPTARG" ;;
@@ -66,7 +70,9 @@ while getopts "cn:o:b:qrsw:h" opt; do
     h) usage; exit 0 ;;
     # Options passed to binaries
     b) bench_iters="$OPTARG" ;;
+    e) evict_cache=1 ;;
     q) quick_run=1 ;;
+    Q) quick_run=1; custom_quick_array_size="$OPTARG" ;;
     r) run=1 ;;
     s) run_sim=1 ;;
     w) warmup_iters="$OPTARG" ;;
@@ -90,7 +96,9 @@ if [[ $collect_only -eq 0 ]]; then
   # Build the arguments for the binaries
   args=()
   [[ $bench_iters -gt -1 ]] && args+=("-b" "$bench_iters")
+  [[ $evict_cache -eq 1 ]] && args+=("-e")
   [[ $quick_run -eq 1 ]] && args+=("-q")
+  [[ $custom_quick_array_size -gt 0 ]] && args+=("-Q" "$custom_quick_array_size")
   [[ $run -eq 1 ]] && args+=("-r")
   [[ $run_sim -eq 1 ]] && args+=("-s")
   [[ $warmup_iters -gt -1 ]] && args+=("-w" "$warmup_iters")

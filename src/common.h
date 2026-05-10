@@ -5,7 +5,6 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -61,6 +60,10 @@
 // default alignment for aligned_alloc
 #define ALIGNMENT 128
 
+// Size of the device-side buffer used to evict the GPU cache between iterations
+// Must be larger than any L2/MALL/Infinity-cache we expect to run on.
+#define CACHE_EVICT_BYTES (512ull * 1024 * 1024)
+
 #ifdef AOMP
 #define COMPILER_LABEL "aomp"
 #elif defined(AOMP_DEV)
@@ -80,13 +83,13 @@
 using Clock = std::chrono::steady_clock;
 
 // Selected arrays sizes for quick run
-extern const std::array<uint64_t, 1> array_sizes_quick;
+extern const std::vector<uint64_t> array_sizes_quick;
 
 // Array sizes for full run
 #if NOLOOP
-extern const std::array<uint64_t, 9> array_sizes;
+extern const std::vector<uint64_t> array_sizes;
 #else
-extern const std::array<uint64_t, 14> array_sizes;
+extern const std::vector<uint64_t> array_sizes;
 #endif // NOLOOP
 
 // Benchmark operation declarations.
@@ -101,6 +104,9 @@ struct Config {
   bool run = false;
   // Whether to run the simulation tests.
   bool run_sim = false;
+  // Whether to evict the GPU L2/MALL cache between iterations (cold-cache
+  // mode).
+  bool evict_cache = false;
   int warmup_iters = 2;
   int bench_iters = 10;
   std::vector<uint64_t> array_sizes;
@@ -148,6 +154,9 @@ template <typename T> inline T *target_alloc(uint64_t n, int devid) {
   }
   return ret;
 }
+
+// Evict the GPU's L2/MALL cache by writing to a large enough device buffer.
+void evict_device_cache();
 
 // Deterministic initialization for reproducibility.
 template <typename T> inline void init_data(T *arr1, T *arr2, uint64_t n) {
