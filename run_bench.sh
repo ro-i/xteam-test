@@ -169,7 +169,7 @@ extract_numeric_data() {
     mapfile -t best_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$7)}" "${file_list[@]}" | sed "s/,//g")
     mapfile -t avg_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$8)}" "${file_list[@]}" | sed "s/,//g")
   else
-    # Get min (= best) time (s) and avg time (s)
+    # Get min (= best) time (ms) and avg time (ms)
     mapfile -t best_list < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$4)}" "${file_list[@]}")
     mapfile -t avg_list  < <(awk "/^${test_name}\s+${type_name}\s+${n_val}\s+/ {print (\$4 == \"FAIL\" ? \"FAIL\" : \$6)}" "${file_list[@]}")
   fi
@@ -194,7 +194,7 @@ extract_numeric_data() {
       if [[ $is_mbps -eq 1 ]]; then
         avg=$(echo "scale=0; $avg / ${#avg_list[@]}" | bc -l | format_number)
       else
-        avg=$(echo "scale=6; $avg / ${#avg_list[@]}" | bc -l | sed 's/^\./0./')
+        avg=$(echo "scale=3; $avg / ${#avg_list[@]}" | bc -l | sed 's/^\./0./')
       fi
     else
       avg="FAIL"
@@ -223,6 +223,6 @@ echo "$test_spec" | while read -r test_name type_name n_val; do
 done
 
 echo
-echo "* = fallback to time (s) because the test has no memory accesses (this is not an error!)"
+echo "* = fallback to time (ms) because the test has no memory accesses (this is not an error!)"
 echo
 echo "Per-round results saved in $results_dir/"

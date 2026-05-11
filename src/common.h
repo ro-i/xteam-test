@@ -295,7 +295,7 @@ inline void print_array_sizes() {
 inline void print_header() {
   std::cout << std::format(
       "{:>24} {:>8} {:>15}  {:>10}  {:>10}  {:>10}  {:>12}  {:>12}\n", "test",
-      "type", "N", "min(s)", "max(s)", "avg(s)", "best MB/s", "avg MB/s");
+      "type", "N", "min(ms)", "max(ms)", "avg(ms)", "best MB/s", "avg MB/s");
   std::cout << std::format(
       "{:->24} {:->8} {:->15}  {:->10}  {:->10}  {:->10}  {:->12}  {:->12}\n",
       "", "", "", "", "", "", "", "");
@@ -308,10 +308,10 @@ inline void print_result(std::string_view test, std::string_view type,
                              fmt_num_sep(std::format("{}", n)));
     return;
   }
-  std::cout << std::format("{:<24} {:<8} {:>15}  {:>10.6f}  {:>10.6f}  "
-                           "{:>10.6f}  {:>12}  {:>12}\n",
+  std::cout << std::format("{:<24} {:<8} {:>15}  {:>10.3f}  {:>10.3f}  "
+                           "{:>10.3f}  {:>12}  {:>12}\n",
                            test, type, fmt_num_sep(std::format("{}", n)),
-                           r->min_s, r->max_s, r->avg_s,
+                           r->min_s * 1e3, r->max_s * 1e3, r->avg_s * 1e3,
                            fmt_num_sep(std::format("{:.0f}", r->best_mbps)),
                            fmt_num_sep(std::format("{:.0f}", r->avg_mbps)));
 }
