@@ -68,7 +68,7 @@ void evict_device_cache() {
 static void usage(std::string_view argv0) {
   std::cout
       << "Usage: " << argv0
-      << " [-b <int>] [-e] [-q] [-Q <uint64_t>] [-r] [-s] [-w <int>] [-h]\n"
+      << " [-b <int>] [-e] [-q] [-Q <uint64_t>] [-r] [-s] [-V] [-w <int>] [-h]\n"
       << "  -b N: Benchmark iterations (default: auto-scaled such that "
          "the runtime per test is ~"
       << AUTO_SCALE_TIME << " second (min " << BENCH_MIN_ITERS
@@ -80,6 +80,7 @@ static void usage(std::string_view argv0) {
       << "  -Q N: Quick run with custom array size N\n"
       << "  -r: Run non-simulation tests\n"
       << "  -s: Run simulation tests\n"
+      << "  -V: Show compiler version used to compile this binary\n"
       << "  -w N: Warmup iterations (default: 2)\n"
       << "  -h: Show this help message\n"
 
@@ -103,7 +104,7 @@ int main(int argc, char *const *argv) {
   int opt;
   std::optional<uint64_t> custom_quick_array_size;
 
-  while ((opt = getopt(argc, argv, "b:eqQ:rsw:h")) != -1) {
+  while ((opt = getopt(argc, argv, "b:eqQ:rsVw:h")) != -1) {
     switch (opt) {
     case 'b':
       conf.bench_iters = std::stoi(optarg);
@@ -125,6 +126,9 @@ int main(int argc, char *const *argv) {
     case 's':
       conf.run_sim = true;
       break;
+    case 'V':
+      std::cout << "clang " << __clang_version__ << "\n";
+      return EXIT_SUCCESS;
     case 'w':
       conf.warmup_iters = std::stoi(optarg);
       break;
@@ -161,6 +165,7 @@ int main(int argc, char *const *argv) {
       CODEGEN_AUTODETECTION ? "true" : "false", conf.warmup_iters,
       conf.auto_scale ? "auto-scaled" : std::to_string(conf.bench_iters),
       XTEAM_NUM_TEAMS, XTEAM_NUM_THREADS);
+  std::cout << "compiled with clang " << __clang_version__ << "\n";
 
   init_common();
   run_bench_op();
