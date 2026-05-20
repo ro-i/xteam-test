@@ -13,7 +13,7 @@ Each compiler is defined and implemented by
 Currently used compilers (with varying levels of support), by their label:
 - `aomp`, a build of ROCm/amd-staging, commit 0d9fa7522a54c226289d69775a5bd3c93f232fef (2026-05-08)
 - `aomp_dev`, a build of https://github.com/ROCm/llvm-project/tree/amd/dev/ro-i/xteam-reduction-scan (re-based on `aomp` above)
-- `trunk`, a build of llvm/main, commit bcc9a55bdb228661d98444f0d6c74b47ed0426bb (2026-04-30)
+- `trunk`, a build of llvm/main, commit 1cb92d817468c6fbe1b9c6905bcf84f712de742c (2026-04-30)
 - `trunk_dev`, a build of llvm/main with custom changes (based on `trunk` above)
 - `trunk_jd`, a build of https://github.com/jdoerfert/llvm-project/tree/omp_multi_lvl_red (re-based on `trunk` above)
 
