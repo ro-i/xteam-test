@@ -2,6 +2,7 @@
 //
 // SPDX-License-Identifier:  MIT
 
+#include <algorithm>
 #include <memory>
 
 #include "omp.h"
@@ -21,6 +22,16 @@ template <typename T, RedOp Op> static T gold_red(const T *in, uint64_t n) {
     a = red_combine<T, Op>(a, in[i]);
   return a;
 }
+
+template <typename T, RedOp Op>
+static void gold_red_arr(T *out, const T *in, uint64_t n, unsigned l) {
+  for (unsigned j = 0; j < l; j++)
+    out[j] = red_identity<T, Op>();
+  for (uint64_t i = 0; i < n; i++)
+    for (unsigned j = 0; j < l; j++)
+      out[j] = red_combine<T, Op>(out[j], in[i * l + j]);
+}
+
 template <typename T>
 static T gold_red_dot(const T *a, const T *b, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
@@ -61,8 +72,7 @@ static T red_dot(const T *__restrict a, const T *__restrict b, uint64_t n) {
 }
 
 // Combined reduction (sum and max) in a single loop.
-template <typename T>
-static T red_combined(const T *__restrict in, uint64_t n) {
+template <typename T> static T red_comb(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   T m = red_identity<T, RedOp::Max>();
 #pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
@@ -114,7 +124,7 @@ static T red_indirect(const T *__restrict in, uint64_t n) {
 
 // Combined reduction (sum and max) in separate loops.
 template <typename T>
-static T red_combined_separate(const T *__restrict in, uint64_t n) {
+static T red_comb_sep(const T *__restrict in, uint64_t n) {
   T s = red_identity<T, RedOp::Sum>();
   T m = red_identity<T, RedOp::Max>();
 #pragma omp target map(tofrom : s, m)
@@ -160,6 +170,62 @@ static T red_kernel_part(const T *__restrict in, uint64_t n) {
 }
 
 // =========================================================================
+// Array reductions
+//
+// Note that clang codegen currently cannot handle dynamic array sizes for array
+// reductions, which is why we only test with compile-time constant sizes for
+// now.
+// =========================================================================
+
+// Simple array reduction
+template <typename T, unsigned l>
+static void red_sum_arr(T *__restrict out, const T *__restrict in, uint64_t n) {
+  for (unsigned i = 0; i < l; i++)
+    out[i] = red_identity<T, RedOp::Sum>();
+#pragma omp target update to(out[0 : l])
+#pragma omp target teams distribute parallel for TEAMS_THREADS reduction(      \
+        + : out[0 : l])
+  for (uint64_t i = 0; i < n; i++) {
+    for (unsigned j = 0; j < l; j++)
+      out[j] += in[i * l + j];
+  }
+#pragma omp target update from(out[0 : l])
+}
+
+// Combined array reduction (sum and max) in separate loops.
+template <typename T, unsigned l>
+static void red_comb_sep_arr(T *__restrict out, const T *__restrict in,
+                             uint64_t n) {
+  T *s = alloc<T>(l);
+  T *m = alloc<T>(l);
+  for (unsigned i = 0; i < l; i++) {
+    s[i] = red_identity<T, RedOp::Sum>();
+    m[i] = red_identity<T, RedOp::Max>();
+  }
+
+#pragma omp target map(tofrom : s[0 : l], m[0 : l])
+#pragma omp teams TEAMS reduction(+ : s[0 : l]) reduction(max : m[0 : l])
+  {
+#pragma omp distribute parallel for THREADS reduction(+ : s[0 : l])
+    for (uint64_t i = 0; i < n; i++) {
+      for (unsigned j = 0; j < l; j++)
+        s[j] += in[i * l + j];
+    }
+
+#pragma omp distribute parallel for THREADS reduction(max : m[0 : l])
+    for (uint64_t i = 0; i < n; i++) {
+      for (unsigned j = 0; j < l; j++)
+        m[j] = std::max(m[j], in[i * l + j]);
+    }
+  }
+  for (unsigned i = 0; i < l; ++i)
+    out[i] = (s[i] / 2) + (m[i] / 2);
+
+  free(s);
+  free(m);
+}
+
+// =========================================================================
 // Benchmark harness
 // =========================================================================
 
@@ -195,6 +261,36 @@ run_bench_red(Kernel kernel, T gold, uint64_t n, std::string_view label,
   return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
 }
 
+template <typename T, typename Kernel, typename... Inputs>
+static std::optional<TimingResult>
+run_bench_red_arr(Kernel kernel, T *gold, uint64_t n, std::string_view label,
+                  T *out, unsigned l, Inputs... inputs) {
+  std::vector<double> times;
+  double total_time = 0.0;
+
+  for (int t = 0; t < conf.warmup_iters + conf.bench_iters; t++) {
+    if (conf.evict_cache)
+      evict_device_cache();
+    auto t1 = Clock::now();
+    kernel(out, inputs..., n);
+    auto t2 = Clock::now();
+    if (!check<T>(out, gold, l, label))
+      return std::nullopt;
+
+    if (t < conf.warmup_iters)
+      continue;
+    double d = duration_cast(t2 - t1).count();
+    times.push_back(d);
+    if (conf.auto_scale) {
+      total_time += d;
+      if (total_time >= AUTO_SCALE_TIME && times.size() >= BENCH_MIN_ITERS)
+        break;
+    }
+  }
+
+  return create_timing_result(times, sizeof(T) * l * n * sizeof...(Inputs));
+}
+
 // Run a simple reduction (e.g., sum/max/min/mult/or) and all its simulation
 // variants.
 template <typename T, RedOp Op, typename Sim, typename Kernel>
@@ -219,9 +315,54 @@ static void run_red_simple(Kernel kernel, const T *in, uint64_t n,
 }
 
 // =========================================================================
-// Templated per-type benchmark runner
+// Templated per-type benchmark runners
 // =========================================================================
 
+// For array reductions ...
+template <typename T, unsigned l>
+static void run_type_red_arr(std::string_view type_name, uint64_t n) {
+  std::optional<TimingResult> r;
+
+  // Skip array reduction if we're only running simulation tests.
+  if (!conf.run)
+    return;
+
+  // Shrink large n by the factor of l to avoid overly huge allocations.
+  if (n * l > conf.array_sizes.back())
+    n /= l;
+
+  T *in = alloc<T>(n * l);
+  init_data<T>(n * l, in);
+  T *out = alloc<T>(l);
+
+#pragma omp target enter data map(to : in[0 : n * l])
+#pragma omp target enter data map(alloc : out[0 : l])
+
+  T *gold = alloc<T>(l);
+  gold_red_arr<T, RedOp::Sum>(gold, in, n, l);
+  T *gold2 = alloc<T>(l);
+  gold_red_arr<T, RedOp::Max>(gold2, in, n, l);
+  for (unsigned i = 0; i < l; i++)
+    gold2[i] = (gold[i] / 2) + (gold2[i] / 2);
+
+  std::string name = std::format("red_sum_arr_{}", l);
+  r = run_bench_red_arr<T>(red_sum_arr<T, l>, gold, n, name, out, l, in);
+  print_result(name, type_name, n, r);
+
+  name = std::format("red_comb_sep_arr_{}", l);
+  r = run_bench_red_arr<T>(red_comb_sep_arr<T, l>, gold2, n, name, out, l, in);
+  print_result(name, type_name, n, r);
+
+  free(gold);
+  free(gold2);
+
+#pragma omp target exit data map(delete : in[0 : n * l], out[0 : l])
+
+  free(in);
+  free(out);
+}
+
+// ... and for regular reductions.
 template <template <typename> class Sim, typename T>
   requires RedSimulationLike<Sim<T>, T>
 static void run_type_red(std::string_view type_name) {
@@ -233,7 +374,7 @@ static void run_type_red(std::string_view type_name) {
   for (uint64_t n : conf.array_sizes) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
-    init_data<T>(in1, in2, n);
+    init_data<T>(n, in1, in2);
 
 #pragma omp target enter data map(to : in1[0 : n], in2[0 : n])
 
@@ -300,17 +441,16 @@ static void run_type_red(std::string_view type_name) {
       gold = (gold_red<T, RedOp::Sum>(in1, n) / 2) +
              (gold_red<T, RedOp::Max>(in1, n) / 2);
       if (conf.run) {
-        r = run_bench_red<T>(red_combined<T>, gold, n, "red_combined",
-                             empty_sim, in1);
-        print_result("red_combined", type_name, n, r);
+        r = run_bench_red<T>(red_comb<T>, gold, n, "red_comb", empty_sim, in1);
+        print_result("red_comb", type_name, n, r);
       }
       // ================================================================
       // ... and in separate loops
       // ================================================================
       if (conf.run) {
-        r = run_bench_red<T>(red_combined_separate<T>, gold, n,
-                             "red_combined_separate", empty_sim, in1);
-        print_result("red_combined_separate", type_name, n, r);
+        r = run_bench_red<T>(red_comb_sep<T>, gold, n, "red_comb_sep",
+                             empty_sim, in1);
+        print_result("red_comb_sep", type_name, n, r);
       }
     }
 
@@ -318,16 +458,16 @@ static void run_type_red(std::string_view type_name) {
 
     free(in1);
     free(in2);
-  }
 
-  if (conf.run && std::is_same_v<T, double>) {
     // ================================================================
-    // reduction computing Pi
+    // Test array reductions
     // ================================================================
-    double gold_pi = std::numbers::pi;
-    uint64_t n = 5000000000;
-    r = run_bench_red<T>(red_pi, gold_pi, n, "red_pi", empty_sim);
-    print_result("red_pi", type_name, n, r);
+
+    // At the moment, clang codegen cannot handle dynamic array sizes for array
+    // reductions, which is why we only test with one compile-time constant size
+    // for now.
+
+    run_type_red_arr<T, 32>(type_name, n);
   }
 }
 
@@ -338,8 +478,23 @@ void run_bench_op() {
 
   std::cout << "\n--- double ---\n";
   run_type_red<SelectedSim, double>("double");
+  if (conf.run) {
+    // ================================================================
+    // reduction computing Pi
+    // ================================================================
+    double gold_pi = std::numbers::pi;
+    uint64_t n = 5000000000;
+    std::unique_ptr<SelectedSim<double>> empty_sim;
+    auto r = run_bench_red<double>(red_pi, gold_pi, n, "red_pi", empty_sim);
+    print_result("red_pi", "double", n, r);
+  }
+
   std::cout << "\n--- uint ---\n";
   run_type_red<SelectedSim, unsigned>("uint");
+
   std::cout << "\n--- ulong ---\n";
   run_type_red<SelectedSim, unsigned long>("ulong");
+
+  std::cout << "\n--- Value ---\n";
+  run_type_red<SelectedSim, Value>("Value");
 }

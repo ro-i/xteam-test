@@ -68,7 +68,8 @@ void evict_device_cache() {
 static void usage(std::string_view argv0) {
   std::cout
       << "Usage: " << argv0
-      << " [-b <int>] [-e] [-q] [-Q <uint64_t>] [-r] [-s] [-V] [-w <int>] [-h]\n"
+      << " [-b <int>] [-e] [-q] [-Q <uint64_t>] [-r] [-s] [-V] [-w <int>] "
+         "[-h]\n"
       << "  -b N: Benchmark iterations (default: auto-scaled such that "
          "the runtime per test is ~"
       << AUTO_SCALE_TIME << " second (min " << BENCH_MIN_ITERS

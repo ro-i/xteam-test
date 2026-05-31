@@ -237,7 +237,7 @@ static void run_type_scan(std::string_view type_name) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
     T *out = alloc<T>(n);
-    init_data<T>(in1, in2, n);
+    init_data<T>(n, in1, in2, out);
 
 #pragma omp target enter data map(to : in1[0 : n], in2[0 : n], out[0 : n])
 

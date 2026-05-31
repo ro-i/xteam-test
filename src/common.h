@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -12,6 +13,7 @@
 #include <format>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <string>
@@ -120,6 +122,132 @@ struct TimingResult {
 };
 
 // =========================================================================
+// Custom type for reductions
+// =========================================================================
+struct Value {
+  static constexpr unsigned n = 5;
+  double p[n];
+  uint64_t tag;
+
+  void compute_tag() {
+    tag = 0;
+    for (unsigned i = 0; i < n; ++i)
+      tag |= std::bit_cast<uint64_t>(p[i]);
+  }
+
+  void init(double fill = 0) {
+    for (unsigned i = 0; i < n; ++i)
+      p[i] = fill;
+    compute_tag();
+  }
+
+  Value() { init(); }
+  explicit Value(double fill) { init(fill); }
+
+  Value(const Value &v) = default;
+  Value(Value &&v) = default;
+
+  Value &operator=(const Value &v) = default;
+  Value &operator=(Value &&v) = default;
+
+  ~Value() = default;
+
+  Value &operator+=(const Value &v) {
+    for (unsigned i = n; i-- > 0;)
+      p[i] += v.p[i];
+    compute_tag();
+    return *this;
+  }
+
+  Value operator+(const Value &v) const {
+    Value r(*this);
+    r += v;
+    return r;
+  }
+
+  Value &operator*=(const Value &v) {
+    for (unsigned i = n; i-- > 0;)
+      p[i] *= v.p[i];
+    compute_tag();
+    return *this;
+  }
+
+  Value operator*(const Value &v) const {
+    Value r(*this);
+    r *= v;
+    return r;
+  }
+
+  Value &operator/=(double v) {
+    for (unsigned i = n; i-- > 0;)
+      p[i] /= v;
+    compute_tag();
+    return *this;
+  }
+
+  Value operator/(double v) const {
+    Value r(*this);
+    r /= v;
+    return r;
+  }
+
+  bool operator==(const Value &v) const {
+    if (tag != v.tag)
+      return false;
+    for (unsigned i = n; i-- > 0;) {
+      if (p[i] != v.p[i])
+        return false;
+    }
+    return true;
+  }
+
+  bool operator<(const Value &v) const {
+    for (unsigned i = 0; i < n; i++) {
+      if (p[i] < v.p[i])
+        return true;
+      if (p[i] > v.p[i])
+        return false;
+    }
+    return false;
+  }
+};
+
+// Deliberately don't declare reduction for + to see if the compiler handles it.
+#pragma omp declare reduction(max : struct Value : omp_out =                   \
+                                  std::max(omp_out, omp_in))                   \
+    initializer(omp_priv(omp_orig))
+#pragma omp declare reduction(min : struct Value : omp_out =                   \
+                                  std::min(omp_out, omp_in))                   \
+    initializer(omp_priv(omp_orig))
+#pragma omp declare reduction(* : struct Value : omp_out *= omp_in)            \
+    initializer(omp_priv = Value(1))
+
+namespace std {
+template <> class numeric_limits<Value> {
+public:
+  static constexpr bool is_specialized = true;
+  static Value lowest() {
+    return Value(std::numeric_limits<double>::lowest());
+  };
+  static Value max() { return Value(std::numeric_limits<double>::max()); };
+  static Value min() { return Value(std::numeric_limits<double>::min()); }
+};
+} // namespace std
+
+template <> struct std::formatter<Value> : std::formatter<std::string> {
+  auto format(const Value &v, std::format_context &ctx) const {
+    std::string s = "[";
+    for (unsigned i = 0; i < v.n; ++i) {
+      if (i > 0)
+        s += ", ";
+      s += std::format("{}", v.p[i]);
+    }
+    s += "]";
+    return std::formatter<std::string>::format(s, ctx);
+  }
+};
+
+// =========================================================================
 // Utility functions
 // =========================================================================
 
@@ -137,6 +265,10 @@ template <typename T> inline T *alloc(uint64_t n) {
     std::cerr << std::format("aligned_alloc failed bytes={}\n", bytes);
     exit(EXIT_FAILURE);
   }
+
+  if (!std::is_trivially_default_constructible_v<T>)
+    std::uninitialized_default_construct_n(ret, n);
+
   return ret;
 }
 
@@ -158,18 +290,18 @@ template <typename T> inline T *target_alloc(uint64_t n, int devid) {
 // Evict the GPU's L2/MALL cache by writing to a large enough device buffer.
 void evict_device_cache();
 
+template <typename T> inline T rand_value() {
+  if constexpr (std::is_floating_point_v<T> || std::is_same_v<T, Value>)
+    return T((rand() % 100) / 100.0);
+  else
+    return T(rand() % 1000);
+}
+
 // Deterministic initialization for reproducibility.
-template <typename T> inline void init_data(T *arr1, T *arr2, uint64_t n) {
+template <typename... T> inline void init_data(uint64_t n, T *...arr) {
   srand(42);
-  for (uint64_t i = 0; i < n; i++) {
-    if constexpr (std::is_floating_point_v<T>) {
-      arr1[i] = T((rand() % 100) / 100.0);
-      arr2[i] = T((rand() % 100) / 100.0);
-    } else {
-      arr1[i] = T(rand() % 1000);
-      arr2[i] = T(rand() % 1000);
-    }
-  }
+  for (uint64_t i = 0; i < n; i++)
+    ((arr[i] = rand_value<T>()), ...);
 }
 
 // =========================================================================
@@ -225,31 +357,48 @@ inline constexpr std::string red_op_to_str(std::string_view fmt) {
 
 template <typename T>
 inline bool check_single(T computed, T gold, std::string_view label,
-                         std::optional<uint64_t> index = std::nullopt) {
-  if constexpr (!std::is_floating_point_v<T>) {
-    if (computed == gold)
+                         std::optional<uint64_t> index = std::nullopt,
+                         std::optional<unsigned> index2 = std::nullopt) {
+  if constexpr (std::is_same_v<T, Value>) {
+    for (unsigned i = 0; i < computed.n; i++) {
+      if (!check_single<double>(computed.p[i], gold.p[i], label, index, i))
+        return false;
+    }
+    return true;
+  } else if constexpr (std::is_floating_point_v<T>) {
+    double g = static_cast<double>(gold), c = static_cast<double>(computed);
+    double abs_err = std::abs(c - g);
+    double scale = std::max({1.0, std::abs(g), std::abs(c)});
+    double rel = abs_err / scale;
+    if (abs_err <= FP_ABS_TOL || rel <= FP_REL_TOL)
       return true;
-    if (index)
-      std::cerr << std::format("FAIL {} at {}: got {}, expected {}\n", label,
-                               *index, computed, gold);
-    else
-      std::cerr << std::format("FAIL {}: got {}, expected {}\n", label,
-                               computed, gold);
+    if (index && index2) {
+      std::cerr << std::format(
+          "FAIL {} at ({}, {}): got {}, expected {} (abs={}, rel={})\n", label,
+          *index, *index2, c, g, abs_err, rel);
+    } else if (index) {
+      std::cerr << std::format(
+          "FAIL {} at {}: got {}, expected {} (abs={}, rel={})\n", label,
+          *index, c, g, abs_err, rel);
+    } else {
+      std::cerr << std::format(
+          "FAIL {}: got {}, expected {} (abs={}, rel={})\n", label, c, g,
+          abs_err, rel);
+    }
     return false;
   }
-  double g = static_cast<double>(gold), c = static_cast<double>(computed);
-  double abs_err = std::abs(c - g);
-  double scale = std::max({1.0, std::abs(g), std::abs(c)});
-  double rel = abs_err / scale;
-  if (abs_err <= FP_ABS_TOL || rel <= FP_REL_TOL)
+  if (computed == gold)
     return true;
-  if (index)
-    std::cerr << std::format(
-        "FAIL {} at {}: got {}, expected {} (abs={}, rel={})\n", label, *index,
-        c, g, abs_err, rel);
-  else
-    std::cerr << std::format("FAIL {}: got {}, expected {} (abs={}, rel={})\n",
-                             label, c, g, abs_err, rel);
+  if (index && index2) {
+    std::cerr << std::format("FAIL {} at ({}, {}): got {}, expected {}\n",
+                             label, *index, *index2, computed, gold);
+  } else if (index) {
+    std::cerr << std::format("FAIL {} at {}: got {}, expected {}\n", label,
+                             *index, computed, gold);
+  } else {
+    std::cerr << std::format("FAIL {}: got {}, expected {}\n", label, computed,
+                             gold);
+  }
   return false;
 }
 
