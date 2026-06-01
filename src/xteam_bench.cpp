@@ -157,7 +157,7 @@ int main(int argc, char *const *argv) {
   if (conf.auto_scale)
     conf.bench_iters = std::numeric_limits<int>::max() - conf.warmup_iters;
 
-  std::cout << std::format(
+  std::cout << format(
       "{} benchmark for {} (quick run: {}, auto-scale: {}, evict cache: {}, "
       "codegen autodetection: {}) "
       "- {} warmup, {} timed iterations - {} teams, {} threads\n",

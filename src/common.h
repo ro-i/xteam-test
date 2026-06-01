@@ -10,14 +10,31 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
-#include <format>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <numeric>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#if __has_include(<format>)
+#define XTEAM_USE_STD_FORMAT 1
+#include <format>
+using std::format;
+using std::make_format_args;
+using std::vformat;
+#else // __has_include(<format>)
+#define XTEAM_USE_STD_FORMAT 0
+#define FMT_HEADER_ONLY
+#define FMT_CONSTEVAL
+#include <fmt/core.h>
+#include <fmt/format.h>
+using fmt::format;
+using fmt::make_format_args;
+using fmt::vformat;
+#endif // __has_include(<format>)
 
 #include "omp.h"
 
@@ -234,6 +251,7 @@ public:
 };
 } // namespace std
 
+#if XTEAM_USE_STD_FORMAT
 template <> struct std::formatter<Value> : std::formatter<std::string> {
   auto format(const Value &v, std::format_context &ctx) const {
     std::string s = "[";
@@ -246,6 +264,20 @@ template <> struct std::formatter<Value> : std::formatter<std::string> {
     return std::formatter<std::string>::format(s, ctx);
   }
 };
+#else
+template <> struct fmt::formatter<Value> : fmt::formatter<std::string> {
+  auto format(const Value &v, fmt::format_context &ctx) const {
+    std::string s = "[";
+    for (unsigned i = 0; i < v.n; ++i) {
+      if (i > 0)
+        s += ", ";
+      s += fmt::format("{}", v.p[i]);
+    }
+    s += "]";
+    return fmt::formatter<std::string>::format(s, ctx);
+  }
+};
+#endif
 
 // =========================================================================
 // Utility functions
@@ -253,8 +285,8 @@ template <> struct std::formatter<Value> : std::formatter<std::string> {
 
 template <typename T> inline T *alloc(uint64_t n) {
   if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
-    std::cerr << std::format("alloc size overflow n={} sizeof(T)={}\n", n,
-                             sizeof(T));
+    std::cerr << format("alloc size overflow n={} sizeof(T)={}\n", n,
+                        sizeof(T));
     exit(EXIT_FAILURE);
   }
   size_t bytes = sizeof(T) * n;
@@ -262,7 +294,7 @@ template <typename T> inline T *alloc(uint64_t n) {
 
   T *ret = static_cast<T *>(aligned_alloc(ALIGNMENT, bytes));
   if (!ret) {
-    std::cerr << std::format("aligned_alloc failed bytes={}\n", bytes);
+    std::cerr << format("aligned_alloc failed bytes={}\n", bytes);
     exit(EXIT_FAILURE);
   }
 
@@ -274,14 +306,13 @@ template <typename T> inline T *alloc(uint64_t n) {
 
 template <typename T> inline T *target_alloc(uint64_t n, int devid) {
   if (n > std::numeric_limits<size_t>::max() / sizeof(T)) {
-    std::cerr << std::format("target_alloc size overflow n={} sizeof(T)={}\n",
-                             n, sizeof(T));
+    std::cerr << format("target_alloc size overflow n={} sizeof(T)={}\n", n,
+                        sizeof(T));
     exit(EXIT_FAILURE);
   }
   T *ret = static_cast<T *>(omp_target_alloc(sizeof(T) * n, devid));
   if (!ret) {
-    std::cerr << std::format("omp_target_alloc failed n={} devid={}\n", n,
-                             devid);
+    std::cerr << format("omp_target_alloc failed n={} devid={}\n", n, devid);
     exit(EXIT_FAILURE);
   }
   return ret;
@@ -338,15 +369,15 @@ template <typename T, RedOp Op> constexpr T red_combine(T a, T b) {
 }
 
 template <RedOp Op>
-inline constexpr std::string red_op_to_str(std::string_view fmt) {
+inline constexpr std::string red_op_to_str(std::string_view pattern) {
   if constexpr (Op == RedOp::Sum)
-    return std::vformat(fmt, std::make_format_args("sum"));
+    return vformat(pattern, make_format_args("sum"));
   else if constexpr (Op == RedOp::Max)
-    return std::vformat(fmt, std::make_format_args("max"));
+    return vformat(pattern, make_format_args("max"));
   else if constexpr (Op == RedOp::Min)
-    return std::vformat(fmt, std::make_format_args("min"));
+    return vformat(pattern, make_format_args("min"));
   else if constexpr (Op == RedOp::Mult)
-    return std::vformat(fmt, std::make_format_args("mult"));
+    return vformat(pattern, make_format_args("mult"));
   else
     static_assert(!std::is_same_v<RedOp, RedOp>, "Unsupported red op");
 }
@@ -373,31 +404,30 @@ inline bool check_single(T computed, T gold, std::string_view label,
     if (abs_err <= FP_ABS_TOL || rel <= FP_REL_TOL)
       return true;
     if (index && index2) {
-      std::cerr << std::format(
+      std::cerr << format(
           "FAIL {} at ({}, {}): got {}, expected {} (abs={}, rel={})\n", label,
           *index, *index2, c, g, abs_err, rel);
     } else if (index) {
-      std::cerr << std::format(
+      std::cerr << format(
           "FAIL {} at {}: got {}, expected {} (abs={}, rel={})\n", label,
           *index, c, g, abs_err, rel);
     } else {
-      std::cerr << std::format(
-          "FAIL {}: got {}, expected {} (abs={}, rel={})\n", label, c, g,
-          abs_err, rel);
+      std::cerr << format("FAIL {}: got {}, expected {} (abs={}, rel={})\n",
+                          label, c, g, abs_err, rel);
     }
     return false;
   }
   if (computed == gold)
     return true;
   if (index && index2) {
-    std::cerr << std::format("FAIL {} at ({}, {}): got {}, expected {}\n",
-                             label, *index, *index2, computed, gold);
+    std::cerr << format("FAIL {} at ({}, {}): got {}, expected {}\n", label,
+                        *index, *index2, computed, gold);
   } else if (index) {
-    std::cerr << std::format("FAIL {} at {}: got {}, expected {}\n", label,
-                             *index, computed, gold);
+    std::cerr << format("FAIL {} at {}: got {}, expected {}\n", label, *index,
+                        computed, gold);
   } else {
-    std::cerr << std::format("FAIL {}: got {}, expected {}\n", label, computed,
-                             gold);
+    std::cerr << format("FAIL {}: got {}, expected {}\n", label, computed,
+                        gold);
   }
   return false;
 }
@@ -437,15 +467,15 @@ inline std::string fmt_num_sep(std::string s) {
 inline void print_array_sizes() {
   std::cout << "Array sizes: ";
   for (uint64_t sz : conf.array_sizes)
-    std::cout << " " << fmt_num_sep(std::format("{}", sz));
+    std::cout << " " << fmt_num_sep(format("{}", sz));
   std::cout << "\n\n";
 }
 
 inline void print_header() {
-  std::cout << std::format(
+  std::cout << format(
       "{:>24} {:>8} {:>15}  {:>10}  {:>10}  {:>10}  {:>12}  {:>12}\n", "test",
       "type", "N", "min(ms)", "max(ms)", "avg(ms)", "best MB/s", "avg MB/s");
-  std::cout << std::format(
+  std::cout << format(
       "{:->24} {:->8} {:->15}  {:->10}  {:->10}  {:->10}  {:->12}  {:->12}\n",
       "", "", "", "", "", "", "", "");
 }
@@ -453,14 +483,14 @@ inline void print_header() {
 inline void print_result(std::string_view test, std::string_view type,
                          uint64_t n, const std::optional<TimingResult> &r) {
   if (!r) {
-    std::cerr << std::format("{:<24} {:<8} {:>15}  FAIL\n", test, type,
-                             fmt_num_sep(std::format("{}", n)));
+    std::cerr << format("{:<24} {:<8} {:>15}  FAIL\n", test, type,
+                        fmt_num_sep(format("{}", n)));
     return;
   }
-  std::cout << std::format("{:<24} {:<8} {:>15}  {:>10.3f}  {:>10.3f}  "
-                           "{:>10.3f}  {:>12}  {:>12}\n",
-                           test, type, fmt_num_sep(std::format("{}", n)),
-                           r->min_s * 1e3, r->max_s * 1e3, r->avg_s * 1e3,
-                           fmt_num_sep(std::format("{:.0f}", r->best_mbps)),
-                           fmt_num_sep(std::format("{:.0f}", r->avg_mbps)));
+  std::cout << format("{:<24} {:<8} {:>15}  {:>10.3f}  {:>10.3f}  "
+                      "{:>10.3f}  {:>12}  {:>12}\n",
+                      test, type, fmt_num_sep(format("{}", n)), r->min_s * 1e3,
+                      r->max_s * 1e3, r->avg_s * 1e3,
+                      fmt_num_sep(format("{:.0f}", r->best_mbps)),
+                      fmt_num_sep(format("{:.0f}", r->avg_mbps)));
 }

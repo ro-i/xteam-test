@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <numbers>
 
 #include "omp.h"
 
@@ -154,7 +155,7 @@ static T red_kernel_part(const T *__restrict in, uint64_t n) {
     for (uint64_t i = 0; i < n; i++)
       s += in[i];
 
-      // Just do something, without actually doing anything
+    // Just do something, without actually doing anything
 #pragma omp parallel THREADS
     {
       int tid = omp_get_thread_num();
@@ -345,11 +346,11 @@ static void run_type_red_arr(std::string_view type_name, uint64_t n) {
   for (unsigned i = 0; i < l; i++)
     gold2[i] = (gold[i] / 2) + (gold2[i] / 2);
 
-  std::string name = std::format("red_sum_arr_{}", l);
+  std::string name = format("red_sum_arr_{}", l);
   r = run_bench_red_arr<T>(red_sum_arr<T, l>, gold, n, name, out, l, in);
   print_result(name, type_name, n, r);
 
-  name = std::format("red_comb_sep_arr_{}", l);
+  name = format("red_comb_sep_arr_{}", l);
   r = run_bench_red_arr<T>(red_comb_sep_arr<T, l>, gold2, n, name, out, l, in);
   print_result(name, type_name, n, r);
 
