@@ -19,6 +19,7 @@ Currently used compilers (with varying levels of support), by their label:
 
 Compile benchmarks binaries:
 - set `CXX_<label>` in either `Makefile` or a `local.mk` file to the path to the corresponding `clang++`.
+- don't forget to set the correct `OFFLOAD_ARCH` (e.g., `gfx90a`, `gfx942`, etc.)
 - run either `make` (or `make all`) to compile the benchmark binaries for all combinations of compilers, operations, and team numbers.
 - or,
   - run `make <op>` to compile the benchmark binaries for all combinations of compilers and team numbers for the operation identified by `op`.
