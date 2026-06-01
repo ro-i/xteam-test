@@ -126,16 +126,31 @@ namespace trunk_sim {
 // --- shuffle helper (wraps __kmpc_shuffle_int{32,64}) --------------------
 template <typename T> static T shuffle(T val, int16_t offset) {
 #if defined(__AMDGCN__) || defined(__NVPTX__)
-  if constexpr (sizeof(T) <= 4) {
-    int32_t tmp;
-    __builtin_memcpy(&tmp, &val, sizeof(T));
-    tmp = __kmpc_shuffle_int32(tmp, offset, _TRUNK_WARP_SIZE);
-    __builtin_memcpy(&val, &tmp, sizeof(T));
-  } else {
-    int64_t tmp;
-    __builtin_memcpy(&tmp, &val, sizeof(T));
-    tmp = __kmpc_shuffle_int64(tmp, offset, _TRUNK_WARP_SIZE);
-    __builtin_memcpy(&val, &tmp, sizeof(T));
+  // Mirror OMPIRBuilder::shuffleAndStore: peel largest power-of-two chunk
+  // (8, 4, 2, 1 bytes) off the remaining payload and shuffle each chunk.
+  // For sizeof(T) <= 8 this collapses to a single shuffle.  For larger
+  // types (e.g. a 48-byte struct) it produces sizeof(T)/8 int64 shuffles.
+  // The runtime only exposes int32/int64 shuffles, so 2- and 1-byte
+  // chunks are widened to int32 (matching the codegen behaviour, which
+  // truncates the i32 result back to iN after the call).
+  char *base = reinterpret_cast<char *>(&val);
+  size_t remaining = sizeof(T);
+  for (unsigned int_size = 8; int_size >= 1; int_size >>= 1) {
+    while (remaining >= int_size) {
+      if (int_size == 8) {
+        int64_t tmp;
+        __builtin_memcpy(&tmp, base, 8);
+        tmp = __kmpc_shuffle_int64(tmp, offset, _TRUNK_WARP_SIZE);
+        __builtin_memcpy(base, &tmp, 8);
+      } else {
+        int32_t tmp = 0;
+        __builtin_memcpy(&tmp, base, int_size);
+        tmp = __kmpc_shuffle_int32(tmp, offset, _TRUNK_WARP_SIZE);
+        __builtin_memcpy(base, &tmp, int_size);
+      }
+      base += int_size;
+      remaining -= int_size;
+    }
   }
 #endif
   return val;
