@@ -14,7 +14,8 @@ Currently used compilers (with varying levels of support), by their label:
 - `aomp`, a build of ROCm/amd-staging, commit 0d9fa7522a54c226289d69775a5bd3c93f232fef (2026-05-08)
 - `aomp_dev`, a build of https://github.com/ROCm/llvm-project/tree/amd/dev/ro-i/xteam-reduction-scan (re-based on `aomp` above)
 - `trunk`, a build of llvm/main, commit fe87c971bf07eb38af97ca96bf2810e94e7549dc (2026-05-31)
-- `trunk_dev`, a build of llvm/main with custom changes (based on `trunk` above)
+- `trunk_cg`, a build of llvm/main with custom codegen changes (based on `trunk` above)
+- `trunk_dev`, a build of llvm/main with custom runtime changes (based on `trunk` above)
 - `trunk_jd`, a build of https://github.com/jdoerfert/llvm-project/tree/omp_multi_lvl_red (re-based on `trunk` above)
 
 Compile benchmarks binaries:

@@ -22,7 +22,7 @@ ALL_OPS = red scan
 
 # Known labels. Add new ones here and provide CXX_<label> via local.mk or the
 # command line to enable them.
-ALL_LABELS = aomp_dev aomp trunk trunk_jd trunk_dev
+ALL_LABELS = aomp_dev aomp trunk trunk_jd trunk_dev trunk_cg
 
 # ── Compiler configurations ─────────────────────────────────────────────────
 # Define as many CXX_<label> variables as you need. Each one will produce one
@@ -45,18 +45,20 @@ OPS_aomp        ?= red scan
 OPS_trunk       ?= red
 OPS_trunk_jd    ?= red
 OPS_trunk_dev   ?= red
+OPS_trunk_cg    ?= red
 # Compiler paths.
 CXX_aomp_dev    ?=
 CXX_aomp        ?=
 CXX_trunk       ?=
 CXX_trunk_jd    ?=
-CXX_trunk_dev   ?=
+CXX_trunk_cg    ?=
 # Compiler definitions.
 DEFS_aomp_dev   ?= $(COMMON_DEFS) -DAOMP_DEV
 DEFS_aomp       ?= $(COMMON_DEFS) -DAOMP
 DEFS_trunk      ?= $(COMMON_DEFS) -DTRUNK
 DEFS_trunk_jd   ?= $(COMMON_DEFS) -DTRUNK_JD
 DEFS_trunk_dev  ?= $(COMMON_DEFS) -DTRUNK_DEV
+DEFS_trunk_cg   ?= $(COMMON_DEFS) -DTRUNK
 # Compiler flags per op.
 FLAGS_aomp_dev_red   ?= $(COMMON_FLAGS)
 FLAGS_aomp_dev_scan  ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
@@ -68,6 +70,8 @@ FLAGS_trunk_jd_red   ?= $(COMMON_FLAGS)
 FLAGS_trunk_jd_scan  ?= $(COMMON_FLAGS)
 FLAGS_trunk_dev_red  ?= $(COMMON_FLAGS)
 FLAGS_trunk_dev_scan ?= $(COMMON_FLAGS)
+FLAGS_trunk_cg_red   ?= $(COMMON_FLAGS)
+FLAGS_trunk_cg_scan  ?= $(COMMON_FLAGS)
 # Note: potentially test no-loop with -fopenmp-target-xteam-no-loop-scan
 
 # ── Common flags ────────────────────────────────────────────────────────────
