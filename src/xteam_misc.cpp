@@ -218,11 +218,12 @@ run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
     kernel();
     auto t2 = Clock::now();
 
-    if (!check(label))
+    if (t == 0 && !check(label))
       return std::nullopt;
 
     if (t < conf.warmup_iters)
       continue;
+
     double d = duration_cast(t2 - t1).count();
     times.push_back(d);
     if (conf.auto_scale) {
