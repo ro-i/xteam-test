@@ -40,7 +40,7 @@ function pct(base, dev, lower_is_better) {
     return (dev - base) / base * 100
 }
 
-/^red_/ {
+/^(red_|misc_)/ {
     lower_is_better = is_ms($5)
 
     avg_208        = num($5)
