@@ -155,7 +155,7 @@ static T red_kernel_part(const T *__restrict in, uint64_t n) {
     for (uint64_t i = 0; i < n; i++)
       s += in[i];
 
-    // Just do something, without actually doing anything
+      // Just do something, without actually doing anything
 #pragma omp parallel THREADS
     {
       int tid = omp_get_thread_num();

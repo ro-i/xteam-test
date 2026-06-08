@@ -18,7 +18,7 @@ COMMON_HEADERS = $(SRC_DIR)/common.h $(SRC_DIR)/xteam_simulations_common.h $(SRC
 
 # Known operations. The op name is also the suffix used in the source file name
 # xteam_<op>.cpp and in the binary name (<op>_<label>_<teams>).
-ALL_OPS = red scan
+ALL_OPS = red scan misc
 
 # Known labels. Add new ones here and provide CXX_<label> via local.mk or the
 # command line to enable them.
@@ -42,10 +42,10 @@ TEAM_NUMS       ?= 208 10400
 # Per-label op support.
 OPS_aomp_dev    ?= red scan
 OPS_aomp        ?= red scan
-OPS_trunk       ?= red
-OPS_trunk_jd    ?= red
-OPS_trunk_dev   ?= red
-OPS_trunk_cg    ?= red
+OPS_trunk       ?= red misc
+OPS_trunk_jd    ?= red misc
+OPS_trunk_dev   ?= red misc
+OPS_trunk_cg    ?= red misc
 # Compiler paths.
 CXX_aomp_dev    ?=
 CXX_aomp        ?=
@@ -64,12 +64,16 @@ FLAGS_aomp_dev_red   ?= $(COMMON_FLAGS)
 FLAGS_aomp_dev_scan  ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
 FLAGS_aomp_red       ?= $(COMMON_FLAGS)
 FLAGS_aomp_scan      ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
+FLAGS_trunk_misc     ?= $(COMMON_FLAGS)
 FLAGS_trunk_red      ?= $(COMMON_FLAGS)
 FLAGS_trunk_scan     ?= $(COMMON_FLAGS)
+FLAGS_trunk_jd_misc  ?= $(COMMON_FLAGS)
 FLAGS_trunk_jd_red   ?= $(COMMON_FLAGS)
 FLAGS_trunk_jd_scan  ?= $(COMMON_FLAGS)
+FLAGS_trunk_dev_misc ?= $(COMMON_FLAGS)
 FLAGS_trunk_dev_red  ?= $(COMMON_FLAGS)
 FLAGS_trunk_dev_scan ?= $(COMMON_FLAGS)
+FLAGS_trunk_cg_misc  ?= $(COMMON_FLAGS)
 FLAGS_trunk_cg_red   ?= $(COMMON_FLAGS)
 FLAGS_trunk_cg_scan  ?= $(COMMON_FLAGS)
 # Note: potentially test no-loop with -fopenmp-target-xteam-no-loop-scan

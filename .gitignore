@@ -5,7 +5,9 @@ prof/
 local.mk
 red_*
 scan_*
+misc_*
 result_*
+log_*
 *.bc
 *.ii
 *.ll

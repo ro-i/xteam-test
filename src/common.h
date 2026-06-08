@@ -195,6 +195,19 @@ struct Value {
     return r;
   }
 
+  Value &operator*=(double v) {
+    for (unsigned i = n; i-- > 0;)
+      p[i] *= v;
+    compute_tag();
+    return *this;
+  }
+
+  Value operator*(double v) const {
+    Value r(*this);
+    r *= v;
+    return r;
+  }
+
   Value &operator/=(double v) {
     for (unsigned i = n; i-- > 0;)
       p[i] /= v;
