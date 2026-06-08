@@ -36,12 +36,16 @@ static bool check_elem_loop(std::string_view label, T *out, const T *gold,
   return check<T>(out, gold, n, label);
 }
 
+template <typename T> static uint64_t data_bytes_elem_loop(uint64_t n) {
+  return sizeof(T) * n * 3;
+}
+
 // -----------------------
 template <typename T>
 static void gold_stencil(T *out, const T *a, uint64_t ny, uint64_t nx) {
 #pragma omp parallel for collapse(2)
-  for (int y = 1; y < ny - 1; ++y) {
-    for (int x = 1; x < nx - 1; ++x) {
+  for (uint64_t y = 1; y < ny - 1; ++y) {
+    for (uint64_t x = 1; x < nx - 1; ++x) {
       out[y * nx + x] = (a[(y - 1) * nx + x] + a[(y + 1) * nx + x] +
                          a[y * nx + (x - 1)] + a[y * nx + (x + 1)]) *
                         0.25;
@@ -52,8 +56,8 @@ static void gold_stencil(T *out, const T *a, uint64_t ny, uint64_t nx) {
 template <typename T>
 static void stencil(T *out, const T *a, uint64_t ny, uint64_t nx) {
 #pragma omp target teams distribute parallel for TEAMS_THREADS collapse(2)
-  for (int y = 1; y < ny - 1; ++y) {
-    for (int x = 1; x < nx - 1; ++x) {
+  for (uint64_t y = 1; y < ny - 1; ++y) {
+    for (uint64_t x = 1; x < nx - 1; ++x) {
       out[y * nx + x] = (a[(y - 1) * nx + x] + a[(y + 1) * nx + x] +
                          a[y * nx + (x - 1)] + a[y * nx + (x + 1)]) *
                         0.25;
@@ -82,6 +86,10 @@ static bool check_stencil(std::string_view label, T *out, const T *gold,
   return true;
 }
 
+template <typename T> static uint64_t data_bytes_stencil(uint64_t n) {
+  return sizeof(T) * n * 2;
+}
+
 // -----------------------
 template <typename T>
 static void gold_linalg(T *out, const T *a, const T *b, T c, uint64_t n) {
@@ -107,12 +115,16 @@ static bool check_linalg(std::string_view label, T *out, const T *gold,
   return check<T>(out, gold, n, label);
 }
 
+template <typename T> static uint64_t data_bytes_linalg(uint64_t n) {
+  return sizeof(T) * n * 3;
+}
+
 // -----------------------
 template <typename T>
 static void gold_particle(T *x, T *y, T *z, const T *vx, const T *vy,
                           const T *vz, T dt, uint64_t n) {
 #pragma omp parallel for
-  for (int i = 0; i < n; ++i) {
+  for (uint64_t i = 0; i < n; ++i) {
     x[i] += vx[i] * dt;
     y[i] += vy[i] * dt;
     z[i] += vz[i] * dt;
@@ -123,7 +135,7 @@ template <typename T>
 static void particle(T *x, T *y, T *z, const T *vx, const T *vy, const T *vz,
                      T dt, uint64_t n) {
 #pragma omp target teams distribute parallel for TEAMS_THREADS
-  for (int i = 0; i < n; ++i) {
+  for (uint64_t i = 0; i < n; ++i) {
     x[i] += vx[i] * dt;
     y[i] += vy[i] * dt;
     z[i] += vz[i] * dt;
@@ -150,6 +162,10 @@ static bool check_particle(std::string_view label, T *x, T *y, T *z,
          check<T>(z, gold_z, n, label);
 }
 
+template <typename T> static uint64_t data_bytes_particle(uint64_t n) {
+  return sizeof(T) * n * 9;
+}
+
 // -----------------------
 template <typename T, typename F>
 static void gold_elem_func(T *out, const F &func, uint64_t n) {
@@ -173,6 +189,10 @@ static bool check_elem_func(std::string_view label, T *out, const T *gold,
                             uint64_t n) {
 #pragma omp target update from(out[0 : n])
   return check<T>(out, gold, n, label);
+}
+
+template <typename T> static uint64_t data_bytes_elem_func(uint64_t n) {
+  return sizeof(T) * n;
 }
 
 // =========================================================================
@@ -215,13 +235,6 @@ run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
   return create_timing_result(times, data_bytes);
 }
 
-template <typename Gold, typename Kernel, typename Check>
-static std::optional<TimingResult>
-run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
-          const Kernel &kernel, const Check &check) {
-  return run_bench(label, data_bytes, gold, kernel, check, [] {});
-}
-
 // =========================================================================
 // Templated per-type benchmark runners
 // =========================================================================
@@ -243,19 +256,20 @@ template <typename T> static void run_type(std::string_view type_name) {
 #pragma omp target enter data map(alloc : out[0 : n])
 
     r = run_bench(
-        "elem_loop", sizeof(T) * n * 3, [&] { gold_elem_loop(gold, a, b, n); },
+        "misc_elem_loop", data_bytes_elem_loop<T>(n),
+        [&] { gold_elem_loop(gold, a, b, n); },
         [&] { elem_loop(out, a, b, n); },
         [&](std::string_view label) {
           return check_elem_loop(label, out, gold, n);
         },
         [&] { prepare_elem_loop<true>(out, n); });
-    print_result("elem_loop", type_name, n, r);
+    print_result("misc_elem_loop", type_name, n, r);
 
     uint64_t nx = std::max<uint64_t>(1, std::sqrt(n));
     uint64_t ny = n / nx;
     uint64_t stencil_n = nx * ny;
     r = run_bench(
-        "stencil", sizeof(T) * stencil_n * 2,
+        "misc_stencil", data_bytes_stencil<T>(stencil_n),
         [&] {
           prepare_stencil<false>(gold, a, stencil_n);
           gold_stencil(gold, a, ny, nx);
@@ -265,27 +279,29 @@ template <typename T> static void run_type(std::string_view type_name) {
           return check_stencil(label, out, gold, ny, nx);
         },
         [&] { prepare_stencil<true>(out, a, stencil_n); });
-    print_result("stencil", type_name, stencil_n, r);
+    print_result("misc_stencil", type_name, stencil_n, r);
 
     const T c(2.0);
     r = run_bench(
-        "linalg", sizeof(T) * n * 3, [&] { gold_linalg(gold, a, b, c, n); },
+        "misc_linalg", data_bytes_linalg<T>(n),
+        [&] { gold_linalg(gold, a, b, c, n); },
         [&] { linalg(out, a, b, c, n); },
         [&](std::string_view label) {
           return check_linalg(label, out, gold, n);
         },
         [&] { prepare_linalg<true>(out, n); });
-    print_result("linalg", type_name, n, r);
+    print_result("misc_linalg", type_name, n, r);
 
     auto func = [](uint64_t i) { return T(static_cast<double>(i % 100)); };
     r = run_bench(
-        "elem_func", sizeof(T) * n, [&] { gold_elem_func(gold, func, n); },
+        "misc_elem_func", data_bytes_elem_func<T>(n),
+        [&] { gold_elem_func(gold, func, n); },
         [&] { elem_func(out, func, n); },
         [&](std::string_view label) {
           return check_elem_func(label, out, gold, n);
         },
         [&] { prepare_elem_func<true>(out, n); });
-    print_result("elem_func", type_name, n, r);
+    print_result("misc_elem_func", type_name, n, r);
 
 #pragma omp target exit data map(delete : out[0 : n])
 
@@ -311,7 +327,7 @@ template <typename T> static void run_type(std::string_view type_name) {
 
     const T dt(2);
     r = run_bench(
-        "particle", sizeof(T) * n * 6,
+        "misc_particle", data_bytes_particle<T>(n),
         [&] {
           prepare_particle<false>(gold_x, gold_y, gold_z, a, b, z0, n);
           gold_particle(gold_x, gold_y, gold_z, a, b, vz, dt, n);
@@ -321,7 +337,7 @@ template <typename T> static void run_type(std::string_view type_name) {
           return check_particle(label, x, y, z, gold_x, gold_y, gold_z, n);
         },
         [&] { prepare_particle<true>(x, y, z, a, b, z0, n); });
-    print_result("particle", type_name, n, r);
+    print_result("misc_particle", type_name, n, r);
 
 #pragma omp target exit data map(delete : x[0 : n], y[0 : n], z[0 : n],        \
                                      vz[0 : n])

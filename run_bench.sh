@@ -158,7 +158,7 @@ echo
 # (Not all binaries might have the same tests, so we need to collect all test
 # lines from all binaries.)
 mapfile -t round1_files < <(printf "${results_dir}/%s_round1.txt\n" "${binaries[@]}")
-test_spec=$(grep -hEo '^\s*(red|scan)_\S+\s+\S+\s+[0-9,]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
+test_spec=$(grep -hEo '^\s*(misc_red|scan)_\S+\s+\S+\s+[0-9,]+' "${round1_files[@]}" | sort -b -k2,2 -k3,3n -k1,1V -u)
 
 extract_numeric_data() {
   local is_mbps=$1
