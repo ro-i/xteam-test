@@ -45,6 +45,7 @@ using fmt::vformat;
 #define XTEAM_NUM_TEAMS 208 // gfx90a number of CUs: 104
 #endif
 // If true, let codegen for reduction/scan determine num_teams and num_threads.
+// Note that the simulations still use XTEAM_NUM_TEAMS and XTEAM_NUM_THREADS.
 #ifndef CODEGEN_AUTODETECTION
 #define CODEGEN_AUTODETECTION 0
 #endif

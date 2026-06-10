@@ -36,8 +36,8 @@ ALL_LABELS = aomp_dev aomp trunk trunk_jd trunk_dev trunk_cg
 # GPU target.
 OFFLOAD_ARCH    ?= gfx90a
 
-# Team counts to build for.
-TEAM_NUMS       ?= 208 10400
+# Team counts to build for / codegen autodetection.
+TEAM_NUMS       ?= 208 10400 auto
 
 # Per-label op support.
 OPS_aomp_dev    ?= red scan
@@ -116,6 +116,11 @@ all: $(BINARIES)
 # so -save-temps=obj keeps intermediates there, then symlinks the binary to
 # the top dir for convenience.
 define BUILD_RULE
+ifeq ($(3),auto)
+DEFS_$(1)_$(2)_$(3) := -DCODEGEN_AUTODETECTION=1
+else
+DEFS_$(1)_$(2)_$(3) := -DXTEAM_NUM_TEAMS=$(3) -DCODEGEN_AUTODETECTION=0
+endif
 $(1)_$(2)_$(3): $(SRC_DIR)/xteam_bench.cpp \
                 $(SRC_DIR)/xteam_$(1).cpp \
                 $(SRC_DIR)/xteam_simulations_$(2).h \
@@ -125,7 +130,7 @@ $(1)_$(2)_$(3): $(SRC_DIR)/xteam_bench.cpp \
 	rm -rf out_$(1)_$(2)_$(3)
 	mkdir -p out_$(1)_$(2)_$(3)
 	cd out_$(1)_$(2)_$(3) && $$(CXX_$(2)) $$(DEFS_$(2)) $$(FLAGS_$(2)_$(1)) \
-		-DXTEAM_NUM_TEAMS=$(3) \
+		$$(DEFS_$(1)_$(2)_$(3)) \
 		-o $$@ ../$(SRC_DIR)/xteam_bench.cpp ../$(SRC_DIR)/xteam_$(1).cpp
 	ln -sf out_$(1)_$(2)_$(3)/$$@ $$@
 	cd out_$(1)_$(2)_$(3) && $$(dir $$(CXX_$(2)))llvm-dis *.bc
@@ -180,9 +185,10 @@ help:
 	@echo "  FLAGS_<label>    Extra flags    (e.g. FLAGS_aomp=-g)"
 	@echo "  DEFS_<label>     Extra -D defs"
 	@echo "  OPS_<label>      Ops supported by this compiler"
-	@echo "  TEAM_NUMS        Team counts to build (default: 208 10400)"
-	@echo "  OFFLOAD_ARCH     GPU arch       (default: gfx90a)"
+	@echo "  TEAM_NUMS        Team counts to build"
+	@echo "  OFFLOAD_ARCH     GPU arch"
 	@echo ""
 	@echo "Currently active ops:     $(OPS)"
 	@echo "Currently active labels:  $(LABELS)"
 	@echo "Configured team counts:   $(TEAM_NUMS)"
+	@echo "Configured OFFLOAD_ARCH:  $(OFFLOAD_ARCH)"
