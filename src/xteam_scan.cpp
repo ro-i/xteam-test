@@ -15,7 +15,7 @@ std::string bench_op_name = "scan";
 
 template <RedOp Op, ScanMode Mode>
 static constexpr std::string scan_op_to_str(std::string_view pattern) {
-  constexpr std::string ret = red_op_to_str<Op>(pattern);
+  const std::string ret = red_op_to_str<Op>(pattern);
   if constexpr (Mode == ScanMode::Excl)
     return ret + "_excl";
   else if constexpr (Mode == ScanMode::Incl)
