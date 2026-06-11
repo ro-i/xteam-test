@@ -18,6 +18,16 @@
 #define _XTEAMR_SCOPE 0
 #endif
 
+// The AOMP cross-team reduction/scan runtime (__kmpc_xteamr_* / __kmpc_xteams_*
+// / __kmpc_rfun_*) only provides entry points for these scalar types. Custom
+// types like Value cannot be simulated against this backend, so their variant
+// lists are empty.
+template <typename T>
+inline constexpr bool aomp_dev_supports_type_v =
+    std::is_same_v<T, double> || std::is_same_v<T, float> ||
+    std::is_same_v<T, int> || std::is_same_v<T, unsigned int> ||
+    std::is_same_v<T, long> || std::is_same_v<T, unsigned long>;
+
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 #define _XTEAMR_FUNC(T, TS)                                                    \
   _INLINE_ATTR_ void __kmpc_xteamr_##TS(                                       \
@@ -374,24 +384,30 @@ public:
   std::vector<
       std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
   get_all_red_variants() {
-    return {
-        {red_op_to_str<Op>("red_{}_sim"),
-         [this](const T *__restrict in, uint64_t n) {
-           return this->template red_sim<Op>(in, n);
-         }},
-    };
+    if constexpr (!aomp_dev_supports_type_v<T>)
+      return {};
+    else
+      return {
+          {red_op_to_str<Op>("red_{}_sim"),
+           [this](const T *__restrict in, uint64_t n) {
+             return this->template red_sim<Op>(in, n);
+           }},
+      };
   }
 
   std::vector<std::pair<
       std::string,
       std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
   get_all_red_dot_variants() {
-    return {
-        {"red_dot_sim",
-         [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-           return this->red_dot_sim(a, b, n);
-         }},
-    };
+    if constexpr (!aomp_dev_supports_type_v<T>)
+      return {};
+    else
+      return {
+          {"red_dot_sim",
+           [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
+             return this->red_dot_sim(a, b, n);
+           }},
+      };
   }
 
   template <RedOp Op>
@@ -399,16 +415,19 @@ public:
       std::string,
       std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
   get_all_scan_incl_variants() {
-    return {
-        {red_op_to_str<Op>("scan_{}_incl_sim"),
-         [this](const T *__restrict in, T *__restrict out, uint64_t n) {
-           this->template scan_sim<Op, true>(in, out, n);
-         }},
-        {red_op_to_str<Op>("scan_{}_incl_sim_v1"),
-         [this](const T *__restrict in, T *__restrict out, uint64_t n) {
-           this->template scan_sim_v1<Op, true>(in, out, n);
-         }},
-    };
+    if constexpr (!aomp_dev_supports_type_v<T>)
+      return {};
+    else
+      return {
+          {red_op_to_str<Op>("scan_{}_incl_sim"),
+           [this](const T *__restrict in, T *__restrict out, uint64_t n) {
+             this->template scan_sim<Op, true>(in, out, n);
+           }},
+          {red_op_to_str<Op>("scan_{}_incl_sim_v1"),
+           [this](const T *__restrict in, T *__restrict out, uint64_t n) {
+             this->template scan_sim_v1<Op, true>(in, out, n);
+           }},
+      };
   }
 
   template <RedOp Op>
@@ -416,52 +435,61 @@ public:
       std::string,
       std::function<void(const T *__restrict, T *__restrict, uint64_t)>>>
   get_all_scan_excl_variants() {
-    return {
-        {red_op_to_str<Op>("scan_{}_excl_sim"),
-         [this](const T *__restrict in, T *__restrict out, uint64_t n) {
-           this->template scan_sim<Op, false>(in, out, n);
-         }},
-        {red_op_to_str<Op>("scan_{}_excl_sim_v1"),
-         [this](const T *__restrict in, T *__restrict out, uint64_t n) {
-           this->template scan_sim_v1<Op, false>(in, out, n);
-         }},
-    };
+    if constexpr (!aomp_dev_supports_type_v<T>)
+      return {};
+    else
+      return {
+          {red_op_to_str<Op>("scan_{}_excl_sim"),
+           [this](const T *__restrict in, T *__restrict out, uint64_t n) {
+             this->template scan_sim<Op, false>(in, out, n);
+           }},
+          {red_op_to_str<Op>("scan_{}_excl_sim_v1"),
+           [this](const T *__restrict in, T *__restrict out, uint64_t n) {
+             this->template scan_sim_v1<Op, false>(in, out, n);
+           }},
+      };
   }
 
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,
                                       T *__restrict, uint64_t)>>>
   get_all_scan_dot_incl_variants() {
-    return {
-        {"scan_dot_incl_sim",
-         [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                uint64_t n) {
-           this->template scan_dot_sim<true>(a, b, out, n);
-         }},
-        {"scan_dot_incl_sim_v1",
-         [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                uint64_t n) {
-           this->template scan_dot_sim_v1<true>(a, b, out, n);
-         }},
-    };
+    if constexpr (!aomp_dev_supports_type_v<T>)
+      return {};
+    else
+      return {
+          {"scan_dot_incl_sim",
+           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
+                  uint64_t n) {
+             this->template scan_dot_sim<true>(a, b, out, n);
+           }},
+          {"scan_dot_incl_sim_v1",
+           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
+                  uint64_t n) {
+             this->template scan_dot_sim_v1<true>(a, b, out, n);
+           }},
+      };
   }
 
   std::vector<std::pair<
       std::string, std::function<void(const T *__restrict, const T *__restrict,
                                       T *__restrict, uint64_t)>>>
   get_all_scan_dot_excl_variants() {
-    return {
-        {"scan_dot_excl_sim",
-         [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                uint64_t n) {
-           this->template scan_dot_sim<false>(a, b, out, n);
-         }},
-        {"scan_dot_excl_sim_v1",
-         [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                uint64_t n) {
-           this->template scan_dot_sim_v1<false>(a, b, out, n);
-         }},
-    };
+    if constexpr (!aomp_dev_supports_type_v<T>)
+      return {};
+    else
+      return {
+          {"scan_dot_excl_sim",
+           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
+                  uint64_t n) {
+             this->template scan_dot_sim<false>(a, b, out, n);
+           }},
+          {"scan_dot_excl_sim_v1",
+           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
+                  uint64_t n) {
+             this->template scan_dot_sim_v1<false>(a, b, out, n);
+           }},
+      };
   }
 
 }; // class SimulationAOMPDev
