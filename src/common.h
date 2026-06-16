@@ -401,7 +401,8 @@ inline constexpr std::string red_op_to_str(std::string_view pattern) {
 // =========================================================================
 
 template <typename T>
-inline bool check_single(T computed, T gold, std::string_view label,
+inline bool check_single(const T &computed, const T &gold,
+                         std::string_view label,
                          std::optional<uint64_t> index = std::nullopt,
                          std::optional<unsigned> index2 = std::nullopt) {
   if constexpr (std::is_same_v<T, Value>) {

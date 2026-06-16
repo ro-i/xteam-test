@@ -459,13 +459,13 @@ public:
     else
       return {
           {"scan_dot_incl_sim",
-           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                  uint64_t n) {
+           [this](const T *__restrict a, const T *__restrict b,
+                  T *__restrict out, uint64_t n) {
              this->template scan_dot_sim<true>(a, b, out, n);
            }},
           {"scan_dot_incl_sim_v1",
-           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                  uint64_t n) {
+           [this](const T *__restrict a, const T *__restrict b,
+                  T *__restrict out, uint64_t n) {
              this->template scan_dot_sim_v1<true>(a, b, out, n);
            }},
       };
@@ -480,13 +480,13 @@ public:
     else
       return {
           {"scan_dot_excl_sim",
-           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                  uint64_t n) {
+           [this](const T *__restrict a, const T *__restrict b,
+                  T *__restrict out, uint64_t n) {
              this->template scan_dot_sim<false>(a, b, out, n);
            }},
           {"scan_dot_excl_sim_v1",
-           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                  uint64_t n) {
+           [this](const T *__restrict a, const T *__restrict b,
+                  T *__restrict out, uint64_t n) {
              this->template scan_dot_sim_v1<false>(a, b, out, n);
            }},
       };

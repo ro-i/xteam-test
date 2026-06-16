@@ -232,8 +232,9 @@ static void red_comb_sep_arr(T *__restrict out, const T *__restrict in,
 
 template <typename T, typename Sim, typename Kernel, typename... Inputs>
 static std::optional<TimingResult>
-run_bench_red(Kernel kernel, T gold, uint64_t n, std::string_view label,
-              std::unique_ptr<Sim> &sim, Inputs... inputs) {
+run_bench_red(const Kernel &kernel, const T &gold, uint64_t n,
+              std::string_view label, std::unique_ptr<Sim> &sim,
+              Inputs... inputs) {
   std::vector<double> times;
   double total_time = 0.0;
 
@@ -264,8 +265,9 @@ run_bench_red(Kernel kernel, T gold, uint64_t n, std::string_view label,
 
 template <typename T, typename Kernel, typename... Inputs>
 static std::optional<TimingResult>
-run_bench_red_arr(Kernel kernel, T *gold, uint64_t n, std::string_view label,
-                  T *out, unsigned l, Inputs... inputs) {
+run_bench_red_arr(const Kernel &kernel, const T *gold, uint64_t n,
+                  std::string_view label, T *out, unsigned l,
+                  Inputs... inputs) {
   std::vector<double> times;
   double total_time = 0.0;
 
@@ -295,7 +297,7 @@ run_bench_red_arr(Kernel kernel, T *gold, uint64_t n, std::string_view label,
 // Run a simple reduction (e.g., sum/max/min/mult/or) and all its simulation
 // variants.
 template <typename T, RedOp Op, typename Sim, typename Kernel>
-static void run_red_simple(Kernel kernel, const T *in, uint64_t n,
+static void run_red_simple(const Kernel &kernel, const T *in, uint64_t n,
                            std::string_view type_name,
                            std::unique_ptr<Sim> &sim) {
   std::optional<TimingResult> r;

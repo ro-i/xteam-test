@@ -167,7 +167,7 @@ static void scan_dot_excl(const T *__restrict a, const T *__restrict b,
 
 template <typename T, typename Sim, typename Kernel, typename... Inputs>
 static std::optional<TimingResult>
-run_bench_scan(Kernel kernel, T *out, const T *gold, uint64_t n,
+run_bench_scan(const Kernel &kernel, T *out, const T *gold, uint64_t n,
                std::string_view label, std::unique_ptr<Sim> &sim,
                Inputs... inputs) {
   std::vector<double> times;
@@ -201,7 +201,7 @@ run_bench_scan(Kernel kernel, T *out, const T *gold, uint64_t n,
 
 // Run a simple scan (e.g., sum/max/min/mult) and all its simulation variants.
 template <typename T, RedOp Op, ScanMode Mode, typename Sim, typename Kernel>
-static void run_scan_simple(Kernel kernel, T *gold, const T *in, T *out,
+static void run_scan_simple(const Kernel &kernel, T *gold, const T *in, T *out,
                             uint64_t n, std::string_view type_name,
                             std::unique_ptr<Sim> &sim) {
   std::optional<TimingResult> r;

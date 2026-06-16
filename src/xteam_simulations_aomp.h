@@ -537,8 +537,10 @@ public:
     else
       return {
           {"scan_dot_incl_sim",
-           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                  uint64_t n) { return this->scan_dot_incl_sim(a, b, out, n); }},
+           [this](const T *__restrict a, const T *__restrict b,
+                  T *__restrict out, uint64_t n) {
+             return this->scan_dot_incl_sim(a, b, out, n);
+           }},
       };
   }
 
@@ -551,8 +553,10 @@ public:
     else
       return {
           {"scan_dot_excl_sim",
-           [this](const T *__restrict a, const T *__restrict b, T *__restrict out,
-                  uint64_t n) { return this->scan_dot_excl_sim(a, b, out, n); }},
+           [this](const T *__restrict a, const T *__restrict b,
+                  T *__restrict out, uint64_t n) {
+             return this->scan_dot_excl_sim(a, b, out, n);
+           }},
       };
   }
 
