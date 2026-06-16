@@ -158,13 +158,15 @@ int main(int argc, char *const *argv) {
     conf.bench_iters = std::numeric_limits<int>::max() - conf.warmup_iters;
 
   std::cout << format(
-      "{} benchmark for {} (quick run: {}, auto-scale: {}, evict cache: {}, "
-      "codegen autodetection: {}) "
-      "- {} warmup, {} timed iterations - {} teams, {} threads\n",
+      "{} benchmark for {} (quick run: {}, auto-scale: {}, evict cache: {}) "
+      "- {} warmup, {} timed iterations - {}:{} teams:threads ({}:{} for "
+      "simulations)\n",
       bench_op_name, COMPILER_LABEL, conf.quick_run ? "true" : "false",
       conf.auto_scale ? "true" : "false", conf.evict_cache ? "true" : "false",
-      CODEGEN_AUTODETECTION ? "true" : "false", conf.warmup_iters,
+      conf.warmup_iters,
       conf.auto_scale ? "auto-scaled" : std::to_string(conf.bench_iters),
+      (CODEGEN_AUTODETECTION ? "auto" : std::to_string(XTEAM_NUM_TEAMS)),
+      CODEGEN_AUTODETECTION ? "auto" : std::to_string(XTEAM_NUM_THREADS),
       XTEAM_NUM_TEAMS, XTEAM_NUM_THREADS);
   std::cout << "compiled with clang " << __clang_version__ << "\n";
 
