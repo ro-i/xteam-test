@@ -14,7 +14,11 @@ MAKEFLAGS += -j$(JOBS) -O
 # Sources. Each binary compiles $(SRC_DIR)/xteam_bench.cpp plus exactly one of
 # the op .cpp files, selected by OPS below.
 SRC_DIR        = src
-COMMON_HEADERS = $(SRC_DIR)/common.h $(SRC_DIR)/xteam_simulations_common.h $(SRC_DIR)/xteam_simulations_selected.h
+COMMON_HEADERS = $(SRC_DIR)/common.h \
+	$(SRC_DIR)/xteam_simulations_common.h \
+	$(SRC_DIR)/xteam_simulations_common_aomp.h \
+	$(SRC_DIR)/xteam_simulations_common_trunk.h \
+	$(SRC_DIR)/xteam_simulations_selected.h
 
 # Known operations. The op name is also the suffix used in the source file name
 # xteam_<op>.cpp and in the binary name (<op>_<label>_<teams>).

@@ -5,18 +5,18 @@
 #pragma once
 
 #include "common.h"
-#include "xteam_simulations_common.h"
+#include "xteam_simulations_common_aomp.h"
 
 // =========================================================================
 // Wave-size detection and derived constants
 // =========================================================================
 
 #if defined(__AMDGCN__)
-#define _WAVE_SIZE __builtin_amdgcn_wavefrontsize()
+#define WAVE_SIZE __builtin_amdgcn_wavefrontsize()
 #elif defined(__NVPTX__)
-#define _WAVE_SIZE 32
+#define WAVE_SIZE 32
 #else
-#define _WAVE_SIZE 64
+#define WAVE_SIZE 64
 #endif
 
 // The AOMP cross-team reduction/scan runtime (__kmpc_xteamr_* / __kmpc_xteams_*
@@ -212,16 +212,16 @@ using xteams_phase2_fn_t = void (*)(T *, int, T *, T *, void (*)(T *, T),
 
 // Reduction getter — only _16x64 (wave64) and _32x32 (wave32) exist
 template <typename T> xteamr_fn_t<T> get_kmpc_xteamr_func() {
-  if (_WAVE_SIZE == 64) {
+  if (WAVE_SIZE == 64) {
     _XTEAMR_GETTER_BODY(_16x64)
   } else {
     _XTEAMR_GETTER_BODY(_32x32)
   }
 }
 
-// Scan getter — selects variant matching XTEAM_NUM_THREADS / _WAVE_SIZE
+// Scan getter — selects variant matching XTEAM_NUM_THREADS / WAVE_SIZE
 template <typename T> xteams_fn_t<T> get_kmpc_xteams_func() {
-  if (_WAVE_SIZE == 64) {
+  if (WAVE_SIZE == 64) {
 #if XTEAM_NUM_THREADS == 1024
     _XTEAMS_GETTER_BODY(_16x64)
 #elif XTEAM_NUM_THREADS == 512
@@ -254,7 +254,7 @@ template <typename T> xteams_fn_t<T> get_kmpc_xteams_func() {
 
 // Phase2 getter — only 16x64/8x64/4x64 (wave64) and 32x32/16x32/8x32 (wave32)
 template <typename T> xteams_phase2_fn_t<T> get_kmpc_xteams_phase2_func() {
-  if (_WAVE_SIZE == 64) {
+  if (WAVE_SIZE == 64) {
 #if XTEAM_NUM_THREADS == 1024
     _XTEAMS_P2_GETTER_BODY(_16x64)
 #elif XTEAM_NUM_THREADS == 512
@@ -277,7 +277,7 @@ template <typename T> xteams_phase2_fn_t<T> get_kmpc_xteams_phase2_func() {
   }
 }
 
-template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
+template <typename T> class Simulation {
   // Reduction device state
   uint32_t *d_td = nullptr;
   T *d_team_vals = nullptr;
@@ -294,10 +294,9 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
       T val = rnv;
       for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
         val = red_combine<T, Op>(val, in[i]);
-      get_kmpc_xteamr_func<T>()(val, &s, d_team_vals, d_td,
-                                this->template get_rfun_func<Op>(),
-                                this->template get_rfun_lds_func<Op>(), rnv, k,
-                                XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+      get_kmpc_xteamr_func<T>()(
+          val, &s, d_team_vals, d_td, get_rfun_func<T, Op>(),
+          get_rfun_lds_func<T, Op>(), rnv, k, XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
     }
 
     return s;
@@ -313,10 +312,9 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
       T val = rnv;
       for (uint64_t i = k; i < n; i += XTEAM_TOTAL_NUM_THREADS)
         val += a[i] * b[i];
-      get_kmpc_xteamr_func<T>()(val, &s, d_team_vals, d_td,
-                                this->get_rfun_sum_func(),
-                                this->get_rfun_sum_lds_func(), rnv, k,
-                                XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
+      get_kmpc_xteamr_func<T>()(
+          val, &s, d_team_vals, d_td, get_rfun_sum_func<T>(),
+          get_rfun_sum_lds_func<T>(), rnv, k, XTEAM_NUM_TEAMS, _XTEAMR_SCOPE);
     }
 
     return s;
@@ -360,10 +358,9 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
         out[k * stride + i] = val0;
       }
       d_storage[k] = val0;
-      get_kmpc_xteams_func<T>()(val0, d_storage, out, d_team_vals, d_td,
-                                this->template get_rfun_func<Op>(),
-                                this->template get_rfun_lds_func<Op>(), rnv, k,
-                                XTEAM_NUM_TEAMS);
+      get_kmpc_xteams_func<T>()(
+          val0, d_storage, out, d_team_vals, d_td, get_rfun_func<T, Op>(),
+          get_rfun_lds_func<T, Op>(), rnv, k, XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<Op>(out, n, stride, rnv);
   }
@@ -382,10 +379,9 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
         val0 = red_combine<T, Op>(val0, in[k * stride + i]);
       }
       d_storage[k] = val0;
-      get_kmpc_xteams_func<T>()(val0, d_storage, out, d_team_vals, d_td,
-                                this->template get_rfun_func<Op>(),
-                                this->template get_rfun_lds_func<Op>(), rnv, k,
-                                XTEAM_NUM_TEAMS);
+      get_kmpc_xteams_func<T>()(
+          val0, d_storage, out, d_team_vals, d_td, get_rfun_func<T, Op>(),
+          get_rfun_lds_func<T, Op>(), rnv, k, XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<Op>(out, n, stride, rnv);
   }
@@ -405,8 +401,8 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
       }
       d_storage[k] = val0;
       get_kmpc_xteams_func<T>()(
-          val0, d_storage, out, d_team_vals, d_td, this->get_rfun_sum_func(),
-          this->get_rfun_sum_lds_func(), rnv, k, XTEAM_NUM_TEAMS);
+          val0, d_storage, out, d_team_vals, d_td, get_rfun_sum_func<T>(),
+          get_rfun_sum_lds_func<T>(), rnv, k, XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<RedOp::Sum>(out, n, stride, rnv);
   }
@@ -426,14 +422,14 @@ template <typename T> class SimulationAOMP : public SimulationAOMPBase<T> {
       }
       d_storage[k] = val0;
       get_kmpc_xteams_func<T>()(
-          val0, d_storage, out, d_team_vals, d_td, this->get_rfun_sum_func(),
-          this->get_rfun_sum_lds_func(), rnv, k, XTEAM_NUM_TEAMS);
+          val0, d_storage, out, d_team_vals, d_td, get_rfun_sum_func<T>(),
+          get_rfun_sum_lds_func<T>(), rnv, k, XTEAM_NUM_TEAMS);
     }
     scan_k2_redistribute<RedOp::Sum>(out, n, stride, rnv);
   }
 
 public:
-  SimulationAOMP() {
+  Simulation() {
     assert(d_td == nullptr);
     int devid = omp_get_default_device();
 
@@ -443,7 +439,7 @@ public:
     d_storage = target_alloc<T>(2 * XTEAM_TOTAL_NUM_THREADS + 1, devid);
   }
 
-  ~SimulationAOMP() {
+  ~Simulation() {
     assert(d_td != nullptr);
     int devid = omp_get_default_device();
 
@@ -455,10 +451,10 @@ public:
     d_storage = nullptr;
   }
 
-  SimulationAOMP(const SimulationAOMP &) = delete;
-  SimulationAOMP(SimulationAOMP &&) = delete;
-  SimulationAOMP &operator=(const SimulationAOMP &) = delete;
-  SimulationAOMP &operator=(SimulationAOMP &&) = delete;
+  Simulation(const Simulation &) = delete;
+  Simulation(Simulation &&) = delete;
+  Simulation &operator=(const Simulation &) = delete;
+  Simulation &operator=(Simulation &&) = delete;
 
   void reset_device() {
     if (!d_td)
@@ -476,7 +472,7 @@ public:
       return {
           {red_op_to_str<Op>("red_{}_sim"),
            [this](const T *__restrict in, uint64_t n) {
-             return this->template red_sim<Op>(in, n);
+             return red_sim<Op>(in, n);
            }},
       };
   }
@@ -489,10 +485,8 @@ public:
       return {};
     else
       return {
-          {"red_dot_sim",
-           [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-             return this->red_dot_sim(a, b, n);
-           }},
+          {"red_dot_sim", [this](const T *__restrict a, const T *__restrict b,
+                                 uint64_t n) { return red_dot_sim(a, b, n); }},
       };
   }
 
@@ -507,7 +501,7 @@ public:
       return {
           {red_op_to_str<Op>("scan_{}_incl_sim"),
            [this](const T *__restrict in, T *__restrict out, uint64_t n) {
-             return this->template scan_incl_sim<Op>(in, out, n);
+             return scan_incl_sim<Op>(in, out, n);
            }},
       };
   }
@@ -523,7 +517,7 @@ public:
       return {
           {red_op_to_str<Op>("scan_{}_excl_sim"),
            [this](const T *__restrict in, T *__restrict out, uint64_t n) {
-             return this->template scan_excl_sim<Op>(in, out, n);
+             return scan_excl_sim<Op>(in, out, n);
            }},
       };
   }
@@ -538,9 +532,8 @@ public:
       return {
           {"scan_dot_incl_sim",
            [this](const T *__restrict a, const T *__restrict b,
-                  T *__restrict out, uint64_t n) {
-             return this->scan_dot_incl_sim(a, b, out, n);
-           }},
+                  T *__restrict out,
+                  uint64_t n) { return scan_dot_incl_sim(a, b, out, n); }},
       };
   }
 
@@ -554,12 +547,9 @@ public:
       return {
           {"scan_dot_excl_sim",
            [this](const T *__restrict a, const T *__restrict b,
-                  T *__restrict out, uint64_t n) {
-             return this->scan_dot_excl_sim(a, b, out, n);
-           }},
+                  T *__restrict out,
+                  uint64_t n) { return scan_dot_excl_sim(a, b, out, n); }},
       };
   }
 
-}; // class SimulationAOMP
-
-template <typename T> using SelectedSim = SimulationAOMP<T>;
+}; // class Simulation

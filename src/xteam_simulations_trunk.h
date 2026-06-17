@@ -11,14 +11,14 @@
 #include "omp.h"
 
 #include "common.h"
-#include "xteam_simulations_common.h"
+#include "xteam_simulations_common_trunk.h"
 
 // Matches OMPIRBuilder's default ReductionBufNum (1024)
-#define _TRUNK_NUM_RECORDS 1024
+#define TRUNK_NUM_RECORDS 1024
 
 // =========================================================================
 // Runtime API declarations
-// Completes the declarations from xteam_simulations_common.h
+// Completes the declarations from xteam_simulations_common_trunk.h
 // =========================================================================
 
 #if defined(__AMDGCN__) || defined(__NVPTX__)
@@ -42,12 +42,10 @@ inline int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
 
 // =========================================================================
 // Device helpers and codegen-simulated callbacks
-// Completes the definitions from xteam_simulations_common.h
+// Completes the definitions from xteam_simulations_common_trunk.h
 // =========================================================================
 
 #pragma omp begin declare target
-
-namespace trunk_sim {
 
 // --- 4. _omp_reduction_list_to_global_reduce_func (ListGlobalFnTy) -------
 //   buf[idx] = combine(buf[idx], *priv)
@@ -57,28 +55,23 @@ static void lg_reduce(void *buf, int idx, void *rd) {
   b[idx] = red_combine<T, Op>(b[idx], **reinterpret_cast<T **>(rd));
 }
 
-} // namespace trunk_sim
 #pragma omp end declare target
 
 // =========================================================================
-// SimulationTrunk — simulates the trunk LLVM cross-team reduction.
+// Simulation - simulates the trunk LLVM cross-team reduction.
 //
 // Codegen for `#pragma omp target teams distribute parallel for reduction`
 // generates two runtime calls:
-//   1.  __kmpc_nvptx_parallel_reduce_nowait_v2  — within-team reduction
+//   1.  __kmpc_nvptx_parallel_reduce_nowait_v2 - intra-team reduction
 //       (warp shuffle + inter-warp copy so that thread 0 holds the team
 //       result).
-//   2.  __kmpc_nvptx_teams_reduce_nowait_v2     — cross-team reduction
+//   2.  __kmpc_nvptx_teams_reduce_nowait_v2 - inter-/cross-team reduction
 //       (each team's thread 0 writes to a global buffer; the last team
 //       arriving combines all entries via warp/cross-warp reduction).
 // =========================================================================
 
-template <typename T> class SimulationTrunk {
+template <typename T> class Simulation {
   void *d_gbuf = nullptr;
-
-  // =========================================================================
-  // GPU cross-team reduction kernels
-  // =========================================================================
 
   template <RedOp Op> T red_sim(const T *__restrict in, uint64_t n) {
     const T rnv = red_identity<T, Op>();
@@ -100,8 +93,8 @@ template <typename T> class SimulationTrunk {
       // kmp_sched_distribute_static_chunked with chunk_size=512.
       for (uint64_t chunk = team_id; chunk < num_chunks;
            chunk += XTEAM_NUM_TEAMS) {
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
 
         // Parallel for: each thread processes one element in the chunk,
         // matching kmp_sched_static within the parallel region.
@@ -110,23 +103,21 @@ template <typename T> class SimulationTrunk {
 
         void *rl[1] = {&priv};
         int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, Op>,
-            trunk_sim::warp_copy<T>);
+            nullptr, sizeof(T), rl, shfl_reduce<T, Op>, warp_copy<T>);
 
         if (is_master)
           team_priv = red_combine<T, Op>(team_priv, priv);
 
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
       }
 
       // Cross-team reduction on the accumulated team result
       void *rl[1] = {&team_priv};
       int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
-          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
-          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+          nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl, shfl_reduce<T, Op>,
+          warp_copy<T>, lg_copy<T>, lg_reduce<T, Op>, gl_copy<T>,
+          gl_reduce<T, Op>);
 
       if (winner == 1)
         result = red_combine<T, Op>(result, team_priv);
@@ -159,15 +150,13 @@ template <typename T> class SimulationTrunk {
 
       // Step 1: within-team (parallel) reduction
       __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
-                                             trunk_sim::shfl_reduce<T, Op>,
-                                             trunk_sim::warp_copy<T>);
+                                             shfl_reduce<T, Op>, warp_copy<T>);
 
       // Step 2: cross-team (teams) reduction
       int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
-          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
-          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+          nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl, shfl_reduce<T, Op>,
+          warp_copy<T>, lg_copy<T>, lg_reduce<T, Op>, gl_copy<T>,
+          gl_reduce<T, Op>);
 
       if (winner == 1)
         result = red_combine<T, Op>(result, priv);
@@ -242,16 +231,14 @@ template <typename T> class SimulationTrunk {
         void *rl[1] = {&priv};
 
         // Step 1: within-team (parallel) reduction
-        __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
-                                               trunk_sim::shfl_reduce<T, Op>,
-                                               trunk_sim::warp_copy<T>);
+        __kmpc_nvptx_parallel_reduce_nowait_v2(
+            nullptr, sizeof(T), rl, shfl_reduce<T, Op>, warp_copy<T>);
 
         // Step 2: cross-team (teams) reduction
         int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-            nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-            trunk_sim::shfl_reduce<T, Op>, trunk_sim::warp_copy<T>,
-            trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, Op>,
-            trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+            nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl, shfl_reduce<T, Op>,
+            warp_copy<T>, lg_copy<T>, lg_reduce<T, Op>, gl_copy<T>,
+            gl_reduce<T, Op>);
 
         if (winner == 1)
           result = red_combine<T, Op>(result, priv);
@@ -279,8 +266,8 @@ template <typename T> class SimulationTrunk {
       // Distribute loop: round-robin chunks across teams
       for (uint64_t chunk = team_id; chunk < num_chunks;
            chunk += XTEAM_NUM_TEAMS) {
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
 
         // Parallel for: one element per thread within the chunk
         uint64_t i = chunk * XTEAM_NUM_THREADS + tid;
@@ -288,22 +275,20 @@ template <typename T> class SimulationTrunk {
 
         void *rl[1] = {&priv};
         int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-            trunk_sim::warp_copy<T>);
+            nullptr, sizeof(T), rl, shfl_reduce<T, RedOp::Sum>, warp_copy<T>);
 
         if (is_master)
           team_priv += priv;
 
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
       }
 
       void *rl[1] = {&team_priv};
       int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, RedOp::Sum>, trunk_sim::warp_copy<T>,
-          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, RedOp::Sum>,
-          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, RedOp::Sum>);
+          nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl,
+          shfl_reduce<T, RedOp::Sum>, warp_copy<T>, lg_copy<T>,
+          lg_reduce<T, RedOp::Sum>, gl_copy<T>, gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
         result += team_priv;
@@ -327,14 +312,12 @@ template <typename T> class SimulationTrunk {
 
       void *rl[1] = {&priv};
       __kmpc_nvptx_parallel_reduce_nowait_v2(
-          nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::warp_copy<T>);
+          nullptr, sizeof(T), rl, shfl_reduce<T, RedOp::Sum>, warp_copy<T>);
 
       int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-          nullptr, gbuf, _TRUNK_NUM_RECORDS, sizeof(T), rl,
-          trunk_sim::shfl_reduce<T, RedOp::Sum>, trunk_sim::warp_copy<T>,
-          trunk_sim::lg_copy<T>, trunk_sim::lg_reduce<T, RedOp::Sum>,
-          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, RedOp::Sum>);
+          nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl,
+          shfl_reduce<T, RedOp::Sum>, warp_copy<T>, lg_copy<T>,
+          lg_reduce<T, RedOp::Sum>, gl_copy<T>, gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
         result += priv;
@@ -344,22 +327,22 @@ template <typename T> class SimulationTrunk {
   }
 
 public:
-  SimulationTrunk() {
+  Simulation() {
     assert(d_gbuf == nullptr);
     int devid = omp_get_default_device();
-    d_gbuf = target_alloc<T>(_TRUNK_NUM_RECORDS, devid);
+    d_gbuf = target_alloc<T>(TRUNK_NUM_RECORDS, devid);
   }
 
-  ~SimulationTrunk() {
+  ~Simulation() {
     assert(d_gbuf != nullptr);
     omp_target_free(d_gbuf, omp_get_default_device());
     d_gbuf = nullptr;
   }
 
-  SimulationTrunk(const SimulationTrunk &) = delete;
-  SimulationTrunk(SimulationTrunk &&) = delete;
-  SimulationTrunk &operator=(const SimulationTrunk &) = delete;
-  SimulationTrunk &operator=(SimulationTrunk &&) = delete;
+  Simulation(const Simulation &) = delete;
+  Simulation(Simulation &&) = delete;
+  Simulation &operator=(const Simulation &) = delete;
+  Simulation &operator=(Simulation &&) = delete;
 
   void reset_device() {}
 
@@ -400,6 +383,4 @@ public:
     };
   }
 
-}; // class SimulationTrunk
-
-template <typename T> using SelectedSim = SimulationTrunk<T>;
+}; // class Simulation

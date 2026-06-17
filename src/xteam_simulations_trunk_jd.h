@@ -12,11 +12,11 @@
 #include "omp.h"
 
 #include "common.h"
-#include "xteam_simulations_common.h"
+#include "xteam_simulations_common_trunk.h"
 
 // Thread count for the lvl2 secondary reduction kernel:
 // min(512, XTEAM_NUM_TEAMS), matching the plugin's launch logic.
-#define _TRUNK_LVL2_THREADS ((512 < XTEAM_NUM_TEAMS) ? 512 : XTEAM_NUM_TEAMS)
+#define TRUNK_LVL2_THREADS ((512 < XTEAM_NUM_TEAMS) ? 512 : XTEAM_NUM_TEAMS)
 
 // =========================================================================
 // Layout-compatible replica of KernelLaunchEnvironmentTy from
@@ -37,7 +37,7 @@ struct SimKernelLaunchEnvTy {
 
 // =========================================================================
 // Runtime API declarations
-// Completes the declarations from xteam_simulations_common.h
+// Completes the declarations from xteam_simulations_common_trunk.h
 // =========================================================================
 
 #if defined(__AMDGCN__) || defined(__NVPTX__)
@@ -68,19 +68,16 @@ inline void __kmpc_reduction_inter_warp_copy(void *, uint32_t) {}
 
 // =========================================================================
 // Device helpers and codegen-simulated callbacks
-// Completes the definitions from xteam_simulations_common.h
+// Completes the definitions from xteam_simulations_common_trunk.h
 // =========================================================================
 
 #pragma omp begin declare target
 
-namespace trunk_sim {
-
-// --- 2b. _omp_reduction_inter_warp_copy_func — lvl2 (InterWarpCopyFnTy)
+// --- _omp_reduction_inter_warp_copy_func - lvl2 (InterWarpCopyFnTy)
 //
-// Used by the secondary reduction kernel (kernel 2).  Instead of the
-// chunk-by-chunk shared-memory approach, calls
-// __kmpc_reduction_inter_warp_copy for each element.  Mirrors
-// emitLvl2InterWarpCopyFunction from OMPIRBuilder.
+// Used by the secondary reduction kernel (kernel 2). Instead of the
+// chunk-by-chunk shared-memory approach, calls __kmpc_reduction_inter_warp_copy
+// for each element. Mirrors emitLvl2InterWarpCopyFunction from OMPIRBuilder.
 template <typename T> static void lvl2_warp_copy(void *rd, int32_t /*nw*/) {
 #if defined(__AMDGCN__) || defined(__NVPTX__)
   T *elem = *reinterpret_cast<T **>(rd);
@@ -89,27 +86,23 @@ template <typename T> static void lvl2_warp_copy(void *rd, int32_t /*nw*/) {
 #endif
 }
 
-} // namespace trunk_sim
 #pragma omp end declare target
 
 // =========================================================================
-// SimulationTrunk — simulates the trunk LLVM multi-level cross-team
+// Simulation - simulates the trunk LLVM multi-level cross-team
 // reduction (ReductionBufNum == 0, the new default).
 //
 // Codegen for `#pragma omp target teams distribute parallel for reduction`
 // generates two kernels:
-// Kernel 1: within-team parallel reduce, team master copies to global
-//           buffer via __kmpc_reduction_teams_lvl1.
-// Kernel 2: secondary kernel (1 team, min(512, num_teams) threads)
-//           reduces the global buffer via __kmpc_reduction_teams_lvl2.
+// Kernel 1: intra-team parallel reduce, team master copies to global
+//           buffer via __kmpc_reduction_teams_lvl1
+// Kernel 2: secondary kernel for inter-/cross-team reduction (1 team, min(512,
+//           num_teams) threads) reduces the global buffer via
+//           __kmpc_reduction_teams_lvl2
 // =========================================================================
 
-template <typename T> class SimulationTrunkJD {
+template <typename T> class Simulation {
   void *d_gbuf = nullptr;
-
-  // =========================================================================
-  // GPU cross-team reduction kernels
-  // =========================================================================
 
   template <RedOp Op> T red_sim(const T *__restrict in, uint64_t n) {
     const T rnv = red_identity<T, Op>();
@@ -131,8 +124,8 @@ template <typename T> class SimulationTrunkJD {
       // kmp_sched_distribute_static_chunked with chunk_size=512.
       for (uint64_t chunk = team_id; chunk < num_chunks;
            chunk += XTEAM_NUM_TEAMS) {
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
 
         // Parallel for: each thread processes one element in the chunk,
         // matching kmp_sched_static within the parallel region.
@@ -141,24 +134,23 @@ template <typename T> class SimulationTrunkJD {
 
         void *rl[1] = {&priv};
         int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, Op>,
-            trunk_sim::warp_copy<T>);
+            nullptr, sizeof(T), rl, shfl_reduce<T, Op>, warp_copy<T>);
 
         if (is_master)
           team_priv = red_combine<T, Op>(team_priv, priv);
 
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
       }
 
       void *rl[1] = {&team_priv};
-      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, trunk_sim::lg_copy<T>);
+      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, lg_copy<T>);
     }
 
     // --- Kernel 2: secondary reduction of global buffer ---
 #pragma omp target teams distribute parallel for num_teams(1)                  \
-    num_threads(_TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
-    for (int t = 0; t < _TRUNK_LVL2_THREADS; t++) {
+    num_threads(TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
+    for (int t = 0; t < TRUNK_LVL2_THREADS; t++) {
       SimKernelLaunchEnvTy kle;
       kle.ReductionBuffer = gbuf;
       kle.ReductionBufferElements = XTEAM_NUM_TEAMS;
@@ -166,8 +158,8 @@ template <typename T> class SimulationTrunkJD {
       T priv;
       void *rl[1] = {&priv};
       int32_t winner = __kmpc_reduction_teams_lvl2(
-          &kle, rl, trunk_sim::shfl_reduce<T, Op>, trunk_sim::lvl2_warp_copy<T>,
-          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+          &kle, rl, shfl_reduce<T, Op>, lvl2_warp_copy<T>, gl_copy<T>,
+          gl_reduce<T, Op>);
 
       if (winner == 1)
         result = red_combine<T, Op>(result, priv);
@@ -192,15 +184,14 @@ template <typename T> class SimulationTrunkJD {
 
       void *rl[1] = {&priv};
       __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
-                                             trunk_sim::shfl_reduce<T, Op>,
-                                             trunk_sim::warp_copy<T>);
-      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, trunk_sim::lg_copy<T>);
+                                             shfl_reduce<T, Op>, warp_copy<T>);
+      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, lg_copy<T>);
     }
 
     // --- Kernel 2: secondary reduction of global buffer ---
 #pragma omp target teams distribute parallel for num_teams(1)                  \
-    num_threads(_TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
-    for (int t = 0; t < _TRUNK_LVL2_THREADS; t++) {
+    num_threads(TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
+    for (int t = 0; t < TRUNK_LVL2_THREADS; t++) {
       SimKernelLaunchEnvTy kle;
       kle.ReductionBuffer = gbuf;
       kle.ReductionBufferElements = XTEAM_NUM_TEAMS;
@@ -208,8 +199,8 @@ template <typename T> class SimulationTrunkJD {
       T priv;
       void *rl[1] = {&priv};
       int32_t winner = __kmpc_reduction_teams_lvl2(
-          &kle, rl, trunk_sim::shfl_reduce<T, Op>, trunk_sim::lvl2_warp_copy<T>,
-          trunk_sim::gl_copy<T>, trunk_sim::gl_reduce<T, Op>);
+          &kle, rl, shfl_reduce<T, Op>, lvl2_warp_copy<T>, gl_copy<T>,
+          gl_reduce<T, Op>);
 
       if (winner == 1)
         result = red_combine<T, Op>(result, priv);
@@ -236,8 +227,8 @@ template <typename T> class SimulationTrunkJD {
       // Distribute loop: round-robin chunks across teams
       for (uint64_t chunk = team_id; chunk < num_chunks;
            chunk += XTEAM_NUM_TEAMS) {
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
 
         // Parallel for: one element per thread within the chunk
         uint64_t i = chunk * XTEAM_NUM_THREADS + tid;
@@ -245,24 +236,23 @@ template <typename T> class SimulationTrunkJD {
 
         void *rl[1] = {&priv};
         int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-            trunk_sim::warp_copy<T>);
+            nullptr, sizeof(T), rl, shfl_reduce<T, RedOp::Sum>, warp_copy<T>);
 
         if (is_master)
           team_priv += priv;
 
-        __trunk_sim_barrier();
-        __trunk_sim_barrier();
+        trunk_sim_barrier();
+        trunk_sim_barrier();
       }
 
       void *rl[1] = {&team_priv};
-      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, trunk_sim::lg_copy<T>);
+      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, lg_copy<T>);
     }
 
     // --- Kernel 2: secondary reduction of global buffer ---
 #pragma omp target teams distribute parallel for num_teams(1)                  \
-    num_threads(_TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
-    for (int t = 0; t < _TRUNK_LVL2_THREADS; t++) {
+    num_threads(TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
+    for (int t = 0; t < TRUNK_LVL2_THREADS; t++) {
       SimKernelLaunchEnvTy kle;
       kle.ReductionBuffer = gbuf;
       kle.ReductionBufferElements = XTEAM_NUM_TEAMS;
@@ -270,9 +260,8 @@ template <typename T> class SimulationTrunkJD {
       T priv;
       void *rl[1] = {&priv};
       int32_t winner = __kmpc_reduction_teams_lvl2(
-          &kle, rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::lvl2_warp_copy<T>, trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, RedOp::Sum>);
+          &kle, rl, shfl_reduce<T, RedOp::Sum>, lvl2_warp_copy<T>, gl_copy<T>,
+          gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
         result += priv;
@@ -296,15 +285,14 @@ template <typename T> class SimulationTrunkJD {
 
       void *rl[1] = {&priv};
       __kmpc_nvptx_parallel_reduce_nowait_v2(
-          nullptr, sizeof(T), rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::warp_copy<T>);
-      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, trunk_sim::lg_copy<T>);
+          nullptr, sizeof(T), rl, shfl_reduce<T, RedOp::Sum>, warp_copy<T>);
+      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, lg_copy<T>);
     }
 
     // --- Kernel 2: secondary reduction of global buffer ---
 #pragma omp target teams distribute parallel for num_teams(1)                  \
-    num_threads(_TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
-    for (int t = 0; t < _TRUNK_LVL2_THREADS; t++) {
+    num_threads(TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
+    for (int t = 0; t < TRUNK_LVL2_THREADS; t++) {
       SimKernelLaunchEnvTy kle;
       kle.ReductionBuffer = gbuf;
       kle.ReductionBufferElements = XTEAM_NUM_TEAMS;
@@ -312,9 +300,8 @@ template <typename T> class SimulationTrunkJD {
       T priv;
       void *rl[1] = {&priv};
       int32_t winner = __kmpc_reduction_teams_lvl2(
-          &kle, rl, trunk_sim::shfl_reduce<T, RedOp::Sum>,
-          trunk_sim::lvl2_warp_copy<T>, trunk_sim::gl_copy<T>,
-          trunk_sim::gl_reduce<T, RedOp::Sum>);
+          &kle, rl, shfl_reduce<T, RedOp::Sum>, lvl2_warp_copy<T>, gl_copy<T>,
+          gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
         result += priv;
@@ -324,22 +311,22 @@ template <typename T> class SimulationTrunkJD {
   }
 
 public:
-  SimulationTrunkJD() {
+  Simulation() {
     assert(d_gbuf == nullptr);
     int devid = omp_get_default_device();
     d_gbuf = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
   }
 
-  ~SimulationTrunkJD() {
+  ~Simulation() {
     assert(d_gbuf != nullptr);
     omp_target_free(d_gbuf, omp_get_default_device());
     d_gbuf = nullptr;
   }
 
-  SimulationTrunkJD(const SimulationTrunkJD &) = delete;
-  SimulationTrunkJD(SimulationTrunkJD &&) = delete;
-  SimulationTrunkJD &operator=(const SimulationTrunkJD &) = delete;
-  SimulationTrunkJD &operator=(SimulationTrunkJD &&) = delete;
+  Simulation(const Simulation &) = delete;
+  Simulation(Simulation &&) = delete;
+  Simulation &operator=(const Simulation &) = delete;
+  Simulation &operator=(Simulation &&) = delete;
 
   void reset_device() {}
 
@@ -377,6 +364,4 @@ public:
     };
   }
 
-}; // class SimulationTrunkJD
-
-template <typename T> using SelectedSim = SimulationTrunkJD<T>;
+}; // class Simulation
