@@ -561,3 +561,5 @@ public:
   }
 
 }; // class SimulationAOMP
+
+template <typename T> using SelectedSim = SimulationAOMP<T>;

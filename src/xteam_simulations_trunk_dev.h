@@ -444,3 +444,5 @@ public:
   }
 
 }; // class SimulationTrunkDev
+
+template <typename T> using SelectedSim = SimulationTrunkDev<T>;

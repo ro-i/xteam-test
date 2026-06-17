@@ -378,3 +378,5 @@ public:
   }
 
 }; // class SimulationTrunkJD
+
+template <typename T> using SelectedSim = SimulationTrunkJD<T>;

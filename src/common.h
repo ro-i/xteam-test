@@ -84,17 +84,8 @@ using fmt::vformat;
 // Must be larger than any L2/MALL/Infinity-cache we expect to run on.
 #define CACHE_EVICT_BYTES (512ull * 1024 * 1024)
 
-#ifdef AOMP
-#define COMPILER_LABEL "aomp"
-#elif defined(AOMP_DEV)
-#define COMPILER_LABEL "aomp_dev"
-#elif defined(TRUNK)
-#define COMPILER_LABEL "trunk"
-#elif defined(TRUNK_DEV)
-#define COMPILER_LABEL "trunk_dev"
-#elif defined(TRUNK_JD)
-#define COMPILER_LABEL "trunk_jd"
-#else
+// COMPILER_LABEL is passed by the Makefile as -DCOMPILER_LABEL="<label>".
+#ifndef COMPILER_LABEL
 #define COMPILER_LABEL "unknown"
 #endif
 

@@ -52,13 +52,24 @@ CXX_aomp        ?=
 CXX_trunk       ?=
 CXX_trunk_jd    ?=
 CXX_trunk_cg    ?=
-# Compiler definitions.
+# Simulation header per label. Defaults to the label's own header; override
+# when a label reuses another label's simulation (e.g. trunk_cg differs from
+# trunk only in codegen, so it shares the trunk runtime definitions).
+SIM_aomp_dev    ?= aomp_dev
+SIM_aomp        ?= aomp
+SIM_trunk       ?= trunk
+SIM_trunk_jd    ?= trunk_jd
+SIM_trunk_dev   ?= trunk_dev
+SIM_trunk_cg    ?= trunk
+# Compiler definitions. The label and simulation header are passed positionally
+# by BUILD_RULE; DEFS_<label> only needs to carry semantic macros that actually
+# branch the source (currently just AOMP_DEV, used by xteam_scan.cpp).
 DEFS_aomp_dev   ?= $(COMMON_DEFS) -DAOMP_DEV
-DEFS_aomp       ?= $(COMMON_DEFS) -DAOMP
-DEFS_trunk      ?= $(COMMON_DEFS) -DTRUNK
-DEFS_trunk_jd   ?= $(COMMON_DEFS) -DTRUNK_JD
-DEFS_trunk_dev  ?= $(COMMON_DEFS) -DTRUNK_DEV
-DEFS_trunk_cg   ?= $(COMMON_DEFS) -DTRUNK
+DEFS_aomp       ?= $(COMMON_DEFS)
+DEFS_trunk      ?= $(COMMON_DEFS)
+DEFS_trunk_jd   ?= $(COMMON_DEFS)
+DEFS_trunk_dev  ?= $(COMMON_DEFS)
+DEFS_trunk_cg   ?= $(COMMON_DEFS)
 # Compiler flags per op.
 FLAGS_aomp_dev_red   ?= $(COMMON_FLAGS)
 FLAGS_aomp_dev_scan  ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
@@ -123,13 +134,15 @@ DEFS_$(1)_$(2)_$(3) := -DXTEAM_NUM_TEAMS=$(3) -DCODEGEN_AUTODETECTION=0
 endif
 $(1)_$(2)_$(3): $(SRC_DIR)/xteam_bench.cpp \
                 $(SRC_DIR)/xteam_$(1).cpp \
-                $(SRC_DIR)/xteam_simulations_$(2).h \
+                $(SRC_DIR)/xteam_simulations_$(SIM_$(2)).h \
                 $(COMMON_HEADERS)
 	@test -n "$$(CXX_$(2))" || { echo "ERROR: CXX_$(2) is not set"; exit 1; }
 	@echo "Building $(1) for $(2) with $(3) teams ..."
 	rm -rf out_$(1)_$(2)_$(3)
 	mkdir -p out_$(1)_$(2)_$(3)
 	cd out_$(1)_$(2)_$(3) && $$(CXX_$(2)) $$(DEFS_$(2)) $$(FLAGS_$(2)_$(1)) \
+		-DCOMPILER_LABEL='"$(2)"' \
+		-DXTEAM_SIM_HEADER='"xteam_simulations_$(SIM_$(2)).h"' \
 		$$(DEFS_$(1)_$(2)_$(3)) \
 		-o $$@ ../$(SRC_DIR)/xteam_bench.cpp ../$(SRC_DIR)/xteam_$(1).cpp
 	ln -sf out_$(1)_$(2)_$(3)/$$@ $$@
