@@ -1,7 +1,7 @@
-The code in this repository tests and compares implementations of cross-team operations such as OpenMP reductions and scans across different compilers for correctness and performance.
+The code in this repository tests and compares implementations of cross-team operations such as OpenMP reductions across different compilers for correctness and performance.
 The tests include
 - high-level tests using the corresponding OpenMP pragmas
-- simulations that don't depend on the reduction/scan-specific codegen and
+- simulations that don't depend on the specific codegen for, e.g., reductions and
   - allow to target the OpenMP device runtime implementation more specifically
   - verify if performance issues are rather runtime- or codegen-related
 
@@ -9,26 +9,32 @@ Each compiler is defined and implemented by
 - a label identifying the compiler, e.g. "aomp" for AOMP or "trunk" for LLVM upstream
 - a preprocessor macro that enables/disables compiler specific parts of the benchmark code
 - an `xteam_simulations_<label>.h` header implementing simulations using the API endpoints provided by the compiler-specific OpenMP device runtime
+  (this header might just be a symlink in case the corresponding compilers only differ in code generation and not in the runtime implementation)
 
 Currently used compilers (with varying levels of support), by their label:
-- `aomp`, a build of ROCm/amd-staging, commit 0d9fa7522a54c226289d69775a5bd3c93f232fef (2026-05-08)
-- `aomp_dev`, a build of https://github.com/ROCm/llvm-project/tree/amd/dev/ro-i/xteam-reduction-scan (re-based on `aomp` above)
-- `trunk`, a build of llvm/main, commit fe87c971bf07eb38af97ca96bf2810e94e7549dc (2026-05-31)
-- `trunk_cg`, a build of llvm/main with custom codegen changes (based on `trunk` above)
-- `trunk_dev`, a build of llvm/main with custom runtime changes (based on `trunk` above)
-- `trunk_jd`, a build of https://github.com/jdoerfert/llvm-project/tree/omp_multi_lvl_red (re-based on `trunk` above)
+- `aomp`, a build of ROCm/llvm-project `amd-staging` (specific commit might vary depending on the situation*)
+- `aomp_dev`, a build of https://github.com/ROCm/llvm-project/tree/amd/dev/ro-i/xteam-reduction-scan
+- `trunk`, a build of llvm/llvm-project `main` (specific commit might vary depending on the situation*)
+- `trunk_cg`, a build of llvm/llvm-project `main` with custom codegen changes
+- `trunk_dev`, a build of llvm/llvm-project `main` with custom runtime changes
+- `trunk_jd`, a build of https://github.com/jdoerfert/llvm-project/tree/omp_multi_lvl_red (rebased and modified)
+
+*If used for benchmarking purposes, the commit information should be provided together with the results.
+
+Note that these labels and their corresponding compilers are just a default set.
+This repository is built specifically for easy modification and addition of different compiler builds.
 
 Compile benchmarks binaries:
 - set `CXX_<label>` in either `Makefile` or a `local.mk` file to the path to the corresponding `clang++`.
 - don't forget to set the correct `OFFLOAD_ARCH` (e.g., `gfx90a`, `gfx942`, etc.)
-- run either `make` (or `make all`) to compile the benchmark binaries for all combinations of compilers, operations, and team numbers.
+- run either `make` (or `make all`) to compile all benchmark binaries for all combinations of compilers, operations, and team numbers.
 - or,
   - run `make <op>` to compile the benchmark binaries for all combinations of compilers and team numbers for the operation identified by `op`.
   - run `make <label>` to compile the benchmark binaries for all combinations of operations and team numbers for the compiler identified by `label`.
   - run `make <op>_<label>` to compile the benchmark binaries for all team numbers for the operation and compiler identified by `op` and `label`.
 - Each compiled benchmark will produce one benchmark binary in the naming format `<op>_<label>_<teams>`, e.g.:
-  - `red_aomp_208` (reduction for `aomp` using 208 teams)
-  - `scan_trunk_dev_10400` (scan for `trunk_dev` using 10400 teams)
+  - `red_aomp_208` (reduction benchmark for `aomp` using 208 teams)
+  - `scan_trunk_dev_10400` (scan benchmark for `trunk_dev` using 10400 teams)
 - For other configuration options, see `Makefile` and `common.h`.
 
 There are two options for running benchmark binaries:
