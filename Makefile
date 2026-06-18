@@ -67,9 +67,7 @@ SIM_trunk_dev   ?= trunk_dev
 SIM_trunk_cg    ?= trunk
 # Compiler definitions. The label and simulation header are passed positionally
 # by BUILD_RULE; DEFS_<label> only needs to carry semantic macros that actually
-# branch the source: AOMP_DEV (used by xteam_scan.cpp) and TRUNK_JD
-# (xteam_red.cpp; skips array reductions, which trunk_jd can't lower — it ICEs
-# in createReductionsGPU).
+# branch the source.
 DEFS_aomp_dev   ?= $(COMMON_DEFS) -DAOMP_DEV
 DEFS_aomp       ?= $(COMMON_DEFS)
 DEFS_trunk      ?= $(COMMON_DEFS)

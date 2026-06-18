@@ -109,70 +109,6 @@ template <typename T> class Simulation {
     T result = rnv;
     void *gbuf = d_gbuf;
 
-    // --- Kernel 1: per-team reduction + copy to global buffer ---
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
-    for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      T team_priv = rnv;
-
-      uint32_t team_id = k / XTEAM_NUM_THREADS;
-      uint32_t tid = k % XTEAM_NUM_THREADS;
-      uint64_t num_chunks = (n + XTEAM_NUM_THREADS - 1) / XTEAM_NUM_THREADS;
-
-      // Distribute loop: each team gets chunks of XTEAM_NUM_THREADS
-      // consecutive elements in round-robin order, matching
-      // kmp_sched_distribute_static_chunked with chunk_size=512.
-      for (uint64_t chunk = team_id; chunk < num_chunks;
-           chunk += XTEAM_NUM_TEAMS) {
-        trunk_sim_barrier();
-        trunk_sim_barrier();
-
-        // Parallel for: each thread processes one element in the chunk,
-        // matching kmp_sched_static within the parallel region.
-        uint64_t i = chunk * XTEAM_NUM_THREADS + tid;
-        T priv = (i < n) ? in[i] : rnv;
-
-        void *rl[1] = {&priv};
-        int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, shfl_reduce<T, Op>, warp_copy<T>);
-
-        if (is_master)
-          team_priv = red_combine<T, Op>(team_priv, priv);
-
-        trunk_sim_barrier();
-        trunk_sim_barrier();
-      }
-
-      void *rl[1] = {&team_priv};
-      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, lg_copy<T>);
-    }
-
-    // --- Kernel 2: secondary reduction of global buffer ---
-#pragma omp target teams distribute parallel for num_teams(1)                  \
-    num_threads(TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
-    for (int t = 0; t < TRUNK_LVL2_THREADS; t++) {
-      SimKernelLaunchEnvTy kle;
-      kle.ReductionBuffer = gbuf;
-      kle.ReductionBufferElements = XTEAM_NUM_TEAMS;
-
-      T priv;
-      void *rl[1] = {&priv};
-      int32_t winner = __kmpc_reduction_teams_lvl2(
-          &kle, rl, shfl_reduce<T, Op>, lvl2_warp_copy<T>, gl_copy<T>,
-          gl_reduce<T, Op>);
-
-      if (winner == 1)
-        result = red_combine<T, Op>(result, priv);
-    }
-
-    return result;
-  }
-
-  template <RedOp Op> T red_sim_v2(const T *__restrict in, uint64_t n) {
-    const T rnv = red_identity<T, Op>();
-    T result = rnv;
-    void *gbuf = d_gbuf;
-
     // --- Kernel 1: per-thread accumulation + parallel reduce + lvl1 ---
 #pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
     num_threads(XTEAM_NUM_THREADS) is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
@@ -210,67 +146,6 @@ template <typename T> class Simulation {
   }
 
   T red_dot_sim(const T *__restrict a, const T *__restrict b, uint64_t n) {
-    const T rnv = red_identity<T, RedOp::Sum>();
-    T result = rnv;
-    void *gbuf = d_gbuf;
-
-    // --- Kernel 1: per-team dot-product reduction + lvl1 ---
-#pragma omp target teams distribute parallel for num_teams(XTEAM_NUM_TEAMS)    \
-    num_threads(XTEAM_NUM_THREADS) is_device_ptr(gbuf) ompx_dyn_cgroup_mem(1)
-    for (uint64_t k = 0; k < XTEAM_TOTAL_NUM_THREADS; k++) {
-      T team_priv = rnv;
-
-      uint32_t team_id = k / XTEAM_NUM_THREADS;
-      uint32_t tid = k % XTEAM_NUM_THREADS;
-      uint64_t num_chunks = (n + XTEAM_NUM_THREADS - 1) / XTEAM_NUM_THREADS;
-
-      // Distribute loop: round-robin chunks across teams
-      for (uint64_t chunk = team_id; chunk < num_chunks;
-           chunk += XTEAM_NUM_TEAMS) {
-        trunk_sim_barrier();
-        trunk_sim_barrier();
-
-        // Parallel for: one element per thread within the chunk
-        uint64_t i = chunk * XTEAM_NUM_THREADS + tid;
-        T priv = (i < n) ? a[i] * b[i] : rnv;
-
-        void *rl[1] = {&priv};
-        int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
-            nullptr, sizeof(T), rl, shfl_reduce<T, RedOp::Sum>, warp_copy<T>);
-
-        if (is_master)
-          team_priv += priv;
-
-        trunk_sim_barrier();
-        trunk_sim_barrier();
-      }
-
-      void *rl[1] = {&team_priv};
-      __kmpc_reduction_teams_lvl1(nullptr, gbuf, rl, lg_copy<T>);
-    }
-
-    // --- Kernel 2: secondary reduction of global buffer ---
-#pragma omp target teams distribute parallel for num_teams(1)                  \
-    num_threads(TRUNK_LVL2_THREADS) map(tofrom : result) is_device_ptr(gbuf)
-    for (int t = 0; t < TRUNK_LVL2_THREADS; t++) {
-      SimKernelLaunchEnvTy kle;
-      kle.ReductionBuffer = gbuf;
-      kle.ReductionBufferElements = XTEAM_NUM_TEAMS;
-
-      T priv;
-      void *rl[1] = {&priv};
-      int32_t winner = __kmpc_reduction_teams_lvl2(
-          &kle, rl, shfl_reduce<T, RedOp::Sum>, lvl2_warp_copy<T>, gl_copy<T>,
-          gl_reduce<T, RedOp::Sum>);
-
-      if (winner == 1)
-        result += priv;
-    }
-
-    return result;
-  }
-
-  T red_dot_sim_v2(const T *__restrict a, const T *__restrict b, uint64_t n) {
     const T rnv = red_identity<T, RedOp::Sum>();
     T result = rnv;
     void *gbuf = d_gbuf;
@@ -335,14 +210,9 @@ public:
       std::pair<std::string, std::function<T(const T *__restrict, uint64_t)>>>
   get_all_red_variants() {
     return {
-        // {red_op_to_str<Op>("red_{}_sim"),
-        //  [this](const T *__restrict in, uint64_t n) {
-        //    return this->template red_sim<Op>(in, n);
-        //  }},
-        // {red_op_to_str<Op>("red_{}_sim_v2"),
         {red_op_to_str<Op>("red_{}_sim"),
          [this](const T *__restrict in, uint64_t n) {
-           return this->template red_sim_v2<Op>(in, n);
+           return this->template red_sim<Op>(in, n);
          }},
     };
   }
@@ -352,14 +222,9 @@ public:
       std::function<T(const T *__restrict, const T *__restrict, uint64_t)>>>
   get_all_red_dot_variants() {
     return {
-        // {"red_dot_sim",
-        //  [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-        //    return this->red_dot_sim(a, b, n);
-        //  }},
-        // {"red_dot_sim_v2",
         {"red_dot_sim",
          [this](const T *__restrict a, const T *__restrict b, uint64_t n) {
-           return this->red_dot_sim_v2(a, b, n);
+           return this->red_dot_sim(a, b, n);
          }},
     };
   }
