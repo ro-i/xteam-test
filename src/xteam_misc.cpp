@@ -199,10 +199,18 @@ template <typename T> static uint64_t data_bytes_elem_func(uint64_t n) {
 // Benchmark harness
 // =========================================================================
 
+// Run one misc benchmark and print its result. Skips tests filtered out by -t
+// (name). The type is already gated upstream in run_type; `type` is passed
+// through only for the result output. `n` is the element count reported (may
+// differ from the kernel's own extent, e.g. the stencil's nx*ny).
 template <typename Gold, typename Kernel, typename Check, typename Prepare>
-static std::optional<TimingResult>
-run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
-          const Kernel &kernel, const Check &check, const Prepare &prepare) {
+static void run_bench(std::string_view name, std::string_view type, uint64_t n,
+                      uint64_t data_bytes, const Gold &gold,
+                      const Kernel &kernel, const Check &check,
+                      const Prepare &prepare) {
+  if (!conf.match_name(name))
+    return;
+
   std::vector<double> times;
   double total_time = 0.0;
 
@@ -218,8 +226,10 @@ run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
     kernel();
     auto t2 = Clock::now();
 
-    if (t == 0 && !check(label))
-      return std::nullopt;
+    if (t == 0 && !check(name)) {
+      print_result(name, type, n, std::nullopt);
+      return;
+    }
 
     if (t < conf.warmup_iters)
       continue;
@@ -233,7 +243,7 @@ run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
     }
   }
 
-  return create_timing_result(times, data_bytes);
+  print_result(name, type, n, create_timing_result(times, data_bytes));
 }
 
 // =========================================================================
@@ -243,8 +253,9 @@ run_bench(std::string_view label, uint64_t data_bytes, const Gold &gold,
 template <typename T> static void run_type(std::string_view type_name) {
   if (!conf.run)
     return;
-
-  std::optional<TimingResult> r;
+  if (!conf.match_type(type_name))
+    return;
+  std::cout << format("\n--- {} ---\n", type_name);
 
   for (uint64_t n : conf.array_sizes) {
     T *a = alloc<T>(n);
@@ -256,21 +267,20 @@ template <typename T> static void run_type(std::string_view type_name) {
 #pragma omp target enter data map(to : a[0 : n], b[0 : n])
 #pragma omp target enter data map(alloc : out[0 : n])
 
-    r = run_bench(
-        "misc_elem_loop", data_bytes_elem_loop<T>(n),
+    run_bench(
+        "misc_elem_loop", type_name, n, data_bytes_elem_loop<T>(n),
         [&] { gold_elem_loop(gold, a, b, n); },
         [&] { elem_loop(out, a, b, n); },
         [&](std::string_view label) {
           return check_elem_loop(label, out, gold, n);
         },
         [&] { prepare_elem_loop<true>(out, n); });
-    print_result("misc_elem_loop", type_name, n, r);
 
     uint64_t nx = std::max<uint64_t>(1, std::sqrt(n));
     uint64_t ny = n / nx;
     uint64_t stencil_n = nx * ny;
-    r = run_bench(
-        "misc_stencil", data_bytes_stencil<T>(stencil_n),
+    run_bench(
+        "misc_stencil", type_name, stencil_n, data_bytes_stencil<T>(stencil_n),
         [&] {
           prepare_stencil<false>(gold, a, stencil_n);
           gold_stencil(gold, a, ny, nx);
@@ -280,29 +290,26 @@ template <typename T> static void run_type(std::string_view type_name) {
           return check_stencil(label, out, gold, ny, nx);
         },
         [&] { prepare_stencil<true>(out, a, stencil_n); });
-    print_result("misc_stencil", type_name, stencil_n, r);
 
     const T c(2.0);
-    r = run_bench(
-        "misc_linalg", data_bytes_linalg<T>(n),
+    run_bench(
+        "misc_linalg", type_name, n, data_bytes_linalg<T>(n),
         [&] { gold_linalg(gold, a, b, c, n); },
         [&] { linalg(out, a, b, c, n); },
         [&](std::string_view label) {
           return check_linalg(label, out, gold, n);
         },
         [&] { prepare_linalg<true>(out, n); });
-    print_result("misc_linalg", type_name, n, r);
 
     auto func = [](uint64_t i) { return T(static_cast<double>(i % 100)); };
-    r = run_bench(
-        "misc_elem_func", data_bytes_elem_func<T>(n),
+    run_bench(
+        "misc_elem_func", type_name, n, data_bytes_elem_func<T>(n),
         [&] { gold_elem_func(gold, func, n); },
         [&] { elem_func(out, func, n); },
         [&](std::string_view label) {
           return check_elem_func(label, out, gold, n);
         },
         [&] { prepare_elem_func<true>(out, n); });
-    print_result("misc_elem_func", type_name, n, r);
 
 #pragma omp target exit data map(delete : out[0 : n])
 
@@ -327,8 +334,8 @@ template <typename T> static void run_type(std::string_view type_name) {
 #pragma omp target enter data map(to : vz[0 : n])
 
     const T dt(2);
-    r = run_bench(
-        "misc_particle", data_bytes_particle<T>(n),
+    run_bench(
+        "misc_particle", type_name, n, data_bytes_particle<T>(n),
         [&] {
           prepare_particle<false>(gold_x, gold_y, gold_z, a, b, z0, n);
           gold_particle(gold_x, gold_y, gold_z, a, b, vz, dt, n);
@@ -338,7 +345,6 @@ template <typename T> static void run_type(std::string_view type_name) {
           return check_particle(label, x, y, z, gold_x, gold_y, gold_z, n);
         },
         [&] { prepare_particle<true>(x, y, z, a, b, z0, n); });
-    print_result("misc_particle", type_name, n, r);
 
 #pragma omp target exit data map(delete : x[0 : n], y[0 : n], z[0 : n],        \
                                      vz[0 : n])
@@ -362,15 +368,8 @@ void run_bench_op() {
 
   print_header();
 
-  std::cout << "\n--- double ---\n";
   run_type<double>("double");
-
-  std::cout << "\n--- uint ---\n";
   run_type<unsigned>("uint");
-
-  std::cout << "\n--- ulong ---\n";
   run_type<unsigned long>("ulong");
-
-  std::cout << "\n--- Value ---\n";
   run_type<Value>("Value");
 }

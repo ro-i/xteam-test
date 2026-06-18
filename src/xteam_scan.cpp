@@ -165,11 +165,17 @@ static void scan_dot_excl(const T *__restrict a, const T *__restrict b,
 // Benchmark harness
 // =========================================================================
 
+// Run one scan benchmark and print its result. Skips tests filtered out by -t
+// (name). The type is already gated upstream in run_type_scan; `type` is passed
+// through only for the result output.
 template <typename T, typename Sim, typename Kernel, typename... Inputs>
-static std::optional<TimingResult>
-run_bench_scan(const Kernel &kernel, T *out, const T *gold, uint64_t n,
-               std::string_view label, std::unique_ptr<Sim> &sim,
-               Inputs... inputs) {
+static void run_bench_scan(std::string_view name, std::string_view type,
+                           const Kernel &kernel, T *out, const T *gold,
+                           uint64_t n, std::unique_ptr<Sim> &sim,
+                           Inputs... inputs) {
+  if (!conf.match_name(name))
+    return;
+
   std::vector<double> times;
   double total_time = 0.0;
 
@@ -182,8 +188,10 @@ run_bench_scan(const Kernel &kernel, T *out, const T *gold, uint64_t n,
     kernel(inputs..., out, n);
     auto t2 = Clock::now();
 #pragma omp target update from(out[0 : n])
-    if (!check<T>(out, gold, n, label))
-      return std::nullopt;
+    if (!check<T>(out, gold, n, name)) {
+      print_result(name, type, n, std::nullopt);
+      return;
+    }
 
     if (t < conf.warmup_iters)
       continue;
@@ -196,7 +204,8 @@ run_bench_scan(const Kernel &kernel, T *out, const T *gold, uint64_t n,
     }
   }
 
-  return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
+  print_result(name, type, n,
+               create_timing_result(times, sizeof(T) * n * sizeof...(Inputs)));
 }
 
 // Run a simple scan (e.g., sum/max/min/mult) and all its simulation variants.
@@ -204,20 +213,15 @@ template <typename T, RedOp Op, ScanMode Mode, typename Sim, typename Kernel>
 static void run_scan_simple(const Kernel &kernel, T *gold, const T *in, T *out,
                             uint64_t n, std::string_view type_name,
                             std::unique_ptr<Sim> &sim) {
-  std::optional<TimingResult> r;
   std::unique_ptr<Sim> empty_sim;
 
   gold_scan<T, Op, Mode>(in, gold, n);
-  if (conf.run) {
-    r = run_bench_scan<T>(kernel, out, gold, n,
-                          scan_op_to_str<Op, Mode>("scan_{}"), empty_sim, in);
-    print_result(scan_op_to_str<Op, Mode>("scan_{}"), type_name, n, r);
-  }
+  if (conf.run)
+    run_bench_scan<T>(scan_op_to_str<Op, Mode>("scan_{}"), type_name, kernel,
+                      out, gold, n, empty_sim, in);
   if (conf.run_sim) {
-    for (const auto &[name, func] : get_all_scan_variants<Op, Mode>(*sim)) {
-      r = run_bench_scan<T>(func, out, gold, n, name, sim, in);
-      print_result(name, type_name, n, r);
-    }
+    for (const auto &[name, func] : get_all_scan_variants<Op, Mode>(*sim))
+      run_bench_scan<T>(name, type_name, func, out, gold, n, sim, in);
   }
 }
 
@@ -228,7 +232,9 @@ static void run_scan_simple(const Kernel &kernel, T *gold, const T *in, T *out,
 template <template <typename> class Sim, typename T>
   requires ScanSimulationLike<Sim<T>, T>
 static void run_type_scan(std::string_view type_name) {
-  std::optional<TimingResult> r;
+  if (!conf.match_type(type_name))
+    return;
+  std::cout << format("\n--- {} ---\n", type_name);
 
   std::unique_ptr<Sim<T>> sim = std::make_unique<Sim<T>>();
   std::unique_ptr<Sim<T>> empty_sim;
@@ -253,17 +259,13 @@ static void run_type_scan(std::string_view type_name) {
     // ================================================================
     gold_scan_dot<T, ScanMode::Excl>(in1, in2, gold, n);
 
-    if (conf.run) {
-      r = run_bench_scan<T>(scan_dot_excl<T>, out, gold, n, "scan_dot_excl",
-                            empty_sim, in1, in2);
-      print_result("scan_dot_excl", type_name, n, r);
-    }
+    if (conf.run)
+      run_bench_scan<T>("scan_dot_excl", type_name, scan_dot_excl<T>, out, gold,
+                        n, empty_sim, in1, in2);
 
     if (conf.run_sim) {
-      for (const auto &[name, func] : sim->get_all_scan_dot_excl_variants()) {
-        r = run_bench_scan<T>(func, out, gold, n, name, sim, in1, in2);
-        print_result(name, type_name, n, r);
-      }
+      for (const auto &[name, func] : sim->get_all_scan_dot_excl_variants())
+        run_bench_scan<T>(name, type_name, func, out, gold, n, sim, in1, in2);
     }
 
     // ================================================================
@@ -271,17 +273,13 @@ static void run_type_scan(std::string_view type_name) {
     // ================================================================
     gold_scan_dot<T, ScanMode::Incl>(in1, in2, gold, n);
 
-    if (conf.run) {
-      r = run_bench_scan<T>(scan_dot_incl<T>, out, gold, n, "scan_dot_incl",
-                            empty_sim, in1, in2);
-      print_result("scan_dot_incl", type_name, n, r);
-    }
+    if (conf.run)
+      run_bench_scan<T>("scan_dot_incl", type_name, scan_dot_incl<T>, out, gold,
+                        n, empty_sim, in1, in2);
 
     if (conf.run_sim) {
-      for (const auto &[name, func] : sim->get_all_scan_dot_incl_variants()) {
-        r = run_bench_scan<T>(func, out, gold, n, name, sim, in1, in2);
-        print_result(name, type_name, n, r);
-      }
+      for (const auto &[name, func] : sim->get_all_scan_dot_incl_variants())
+        run_bench_scan<T>(name, type_name, func, out, gold, n, sim, in1, in2);
     }
 
     // ================================================================
@@ -332,10 +330,7 @@ void run_bench_op() {
 
   print_header();
 
-  std::cout << "\n--- double ---\n";
   run_type_scan<SelectedSim, double>("double");
-  std::cout << "\n--- uint ---\n";
   run_type_scan<SelectedSim, unsigned>("uint");
-  std::cout << "\n--- ulong ---\n";
   run_type_scan<SelectedSim, unsigned long>("ulong");
 }

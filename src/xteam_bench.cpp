@@ -12,6 +12,22 @@
 
 Config conf;
 
+// Split a comma-separated list into non-empty entries.
+static std::vector<std::string> split_csv(std::string_view s) {
+  std::vector<std::string> out;
+  size_t start = 0;
+  while (start <= s.size()) {
+    size_t comma = s.find(',', start);
+    size_t end = (comma == std::string_view::npos) ? s.size() : comma;
+    if (end > start)
+      out.emplace_back(s.substr(start, end - start));
+    if (comma == std::string_view::npos)
+      break;
+    start = comma + 1;
+  }
+  return out;
+}
+
 // Selected arrays sizes for quick run
 #if NOLOOP
 const std::vector<uint64_t> array_sizes_quick{XTEAM_TOTAL_NUM_THREADS};
@@ -68,8 +84,8 @@ void evict_device_cache() {
 static void usage(std::string_view argv0) {
   std::cout
       << "Usage: " << argv0
-      << " [-b <int>] [-e] [-q] [-Q <uint64_t>] [-r] [-s] [-V] [-w <int>] "
-         "[-h]\n"
+      << " [-b <int>] [-e] [-q] [-Q <uint64_t>] [-r] [-s] [-T <list>] "
+         "[-t <list>] [-V] [-w <int>] [-h]\n"
       << "  -b N: Benchmark iterations (default: auto-scaled such that "
          "the runtime per test is ~"
       << AUTO_SCALE_TIME << " second (min " << BENCH_MIN_ITERS
@@ -81,6 +97,10 @@ static void usage(std::string_view argv0) {
       << "  -Q N: Quick run with custom array size N\n"
       << "  -r: Run non-simulation tests\n"
       << "  -s: Run simulation tests\n"
+      << "  -T <list>: Restrict tests to types matching one of the "
+         "comma-separated names (e.g. 'double,uint').\n"
+      << "  -t <list>: Restrict tests to those matching one of the "
+         "comma-separated names (e.g. 'red_sum,red_comb').\n"
       << "  -V: Show compiler version used to compile this binary\n"
       << "  -w N: Warmup iterations (default: 2)\n"
       << "  -h: Show this help message\n"
@@ -105,7 +125,7 @@ int main(int argc, char *const *argv) {
   int opt;
   std::optional<uint64_t> custom_quick_array_size;
 
-  while ((opt = getopt(argc, argv, "b:eqQ:rsVw:h")) != -1) {
+  while ((opt = getopt(argc, argv, "b:eqQ:rsT:t:Vw:h")) != -1) {
     switch (opt) {
     case 'b':
       conf.bench_iters = std::stoi(optarg);
@@ -113,6 +133,12 @@ int main(int argc, char *const *argv) {
       break;
     case 'e':
       conf.evict_cache = true;
+      break;
+    case 'T':
+      conf.type_filters = split_csv(optarg);
+      break;
+    case 't':
+      conf.name_filters = split_csv(optarg);
       break;
     case 'q':
       conf.quick_run = true;

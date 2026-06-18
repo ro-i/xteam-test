@@ -28,6 +28,9 @@ run=0
 run_sim=0
 warmup_iters=-1
 custom_quick_array_size=0
+# type_filter / name_filter are intentionally left unset so we can tell apart
+# "flag not passed" (unset -> match all) from "-T '' / -t ''" (set but empty ->
+# match nothing), mirroring the binary's optional filter semantics.
 
 # Add locale-independent thousand separators to make visual number parsing easier
 format_number() {
@@ -35,7 +38,7 @@ format_number() {
 }
 
 usage() {
-  echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-e] [-q] [-Q N] [-r] [-s] [-w N] [-h] binaries..."
+  echo "usage: $0 [-c] [-n rounds] [-o results_dir] [-b N] [-e] [-q] [-Q N] [-r] [-s] [-T list] [-t list] [-w N] [-h] binaries..."
   echo "  -c: Only collect results for the given number of rounds and the given labels, don't run any tests"
   echo "  -n rounds: Number of rounds to run for each label (default: $rounds)"
   echo "  -o results_dir: Results directory (default: $results_dir)"
@@ -48,6 +51,8 @@ usage() {
   echo "  -Q N: Quick run with custom array size N"
   echo "  -r: Run non-simulation tests"
   echo "  -s: Run simulation tests"
+  echo "  -T list: Restrict tests to types matching one of the comma-separated names (e.g. 'double,uint')."
+  echo "  -t list: Restrict tests to those matching one of the comma-separated names (e.g. 'red_sum,red_comb')."
   echo "  -w N: Warmup iterations (default: 2)"
   echo
   echo "Note that at least one of -r or -s must be specified."
@@ -62,7 +67,7 @@ usage() {
   echo "          run the test and check the result against the gold result"
 }
 
-while getopts "cn:o:b:eqQ:rsw:h" opt; do
+while getopts "cn:o:b:eqQ:rsT:t:w:h" opt; do
   case "$opt" in
     c) collect_only=1 ;;
     n) rounds="$OPTARG" ;;
@@ -75,6 +80,8 @@ while getopts "cn:o:b:eqQ:rsw:h" opt; do
     Q) quick_run=1; custom_quick_array_size="$OPTARG" ;;
     r) run=1 ;;
     s) run_sim=1 ;;
+    T) type_filter="$OPTARG" ;;
+    t) name_filter="$OPTARG" ;;
     w) warmup_iters="$OPTARG" ;;
     *) usage; exit 1 ;;
   esac
@@ -101,6 +108,8 @@ if [[ $collect_only -eq 0 ]]; then
   [[ $custom_quick_array_size -gt 0 ]] && args+=("-Q" "$custom_quick_array_size")
   [[ $run -eq 1 ]] && args+=("-r")
   [[ $run_sim -eq 1 ]] && args+=("-s")
+  [[ -n ${type_filter+x} ]] && args+=("-T" "$type_filter")
+  [[ -n ${name_filter+x} ]] && args+=("-t" "$name_filter")
   [[ $warmup_iters -gt -1 ]] && args+=("-w" "$warmup_iters")
 
   mkdir -p "$results_dir"

@@ -230,11 +230,16 @@ static void red_comb_sep_arr(T *__restrict out, const T *__restrict in,
 // Benchmark harness
 // =========================================================================
 
+// Run one reduction benchmark and print its result. Skips tests filtered out by
+// -t (name). The type is already gated upstream in run_type_red; `type` is
+// passed through only for the result output.
 template <typename T, typename Sim, typename Kernel, typename... Inputs>
-static std::optional<TimingResult>
-run_bench_red(const Kernel &kernel, const T &gold, uint64_t n,
-              std::string_view label, std::unique_ptr<Sim> &sim,
-              Inputs... inputs) {
+static void run_bench_red(std::string_view name, std::string_view type,
+                          const Kernel &kernel, const T &gold, uint64_t n,
+                          std::unique_ptr<Sim> &sim, Inputs... inputs) {
+  if (!conf.match_name(name))
+    return;
+
   std::vector<double> times;
   double total_time = 0.0;
 
@@ -246,8 +251,10 @@ run_bench_red(const Kernel &kernel, const T &gold, uint64_t n,
     auto t1 = Clock::now();
     T result = kernel(inputs..., n);
     auto t2 = Clock::now();
-    if (!check_single<T>(result, gold, label))
-      return std::nullopt;
+    if (!check_single<T>(result, gold, name)) {
+      print_result(name, type, n, std::nullopt);
+      return;
+    }
 
     if (t < conf.warmup_iters)
       continue;
@@ -260,14 +267,17 @@ run_bench_red(const Kernel &kernel, const T &gold, uint64_t n,
     }
   }
 
-  return create_timing_result(times, sizeof(T) * n * sizeof...(Inputs));
+  print_result(name, type, n,
+               create_timing_result(times, sizeof(T) * n * sizeof...(Inputs)));
 }
 
 template <typename T, typename Kernel, typename... Inputs>
-static std::optional<TimingResult>
-run_bench_red_arr(const Kernel &kernel, const T *gold, uint64_t n,
-                  std::string_view label, T *out, unsigned l,
-                  Inputs... inputs) {
+static void run_bench_red_arr(std::string_view name, std::string_view type,
+                              const Kernel &kernel, const T *gold, uint64_t n,
+                              T *out, unsigned l, Inputs... inputs) {
+  if (!conf.match_name(name))
+    return;
+
   std::vector<double> times;
   double total_time = 0.0;
 
@@ -277,8 +287,10 @@ run_bench_red_arr(const Kernel &kernel, const T *gold, uint64_t n,
     auto t1 = Clock::now();
     kernel(out, inputs..., n);
     auto t2 = Clock::now();
-    if (!check<T>(out, gold, l, label))
-      return std::nullopt;
+    if (!check<T>(out, gold, l, name)) {
+      print_result(name, type, n, std::nullopt);
+      return;
+    }
 
     if (t < conf.warmup_iters)
       continue;
@@ -291,7 +303,9 @@ run_bench_red_arr(const Kernel &kernel, const T *gold, uint64_t n,
     }
   }
 
-  return create_timing_result(times, sizeof(T) * l * n * sizeof...(Inputs));
+  print_result(
+      name, type, n,
+      create_timing_result(times, sizeof(T) * l * n * sizeof...(Inputs)));
 }
 
 // Run a simple reduction (e.g., sum/max/min/mult/or) and all its simulation
@@ -300,20 +314,15 @@ template <typename T, RedOp Op, typename Sim, typename Kernel>
 static void run_red_simple(const Kernel &kernel, const T *in, uint64_t n,
                            std::string_view type_name,
                            std::unique_ptr<Sim> &sim) {
-  std::optional<TimingResult> r;
   std::unique_ptr<Sim> empty_sim;
 
   T gold = gold_red<T, Op>(in, n);
-  if (conf.run) {
-    r = run_bench_red<T>(kernel, gold, n, red_op_to_str<Op>("red_{}"),
-                         empty_sim, in);
-    print_result(red_op_to_str<Op>("red_{}"), type_name, n, r);
-  }
+  if (conf.run)
+    run_bench_red<T>(red_op_to_str<Op>("red_{}"), type_name, kernel, gold, n,
+                     empty_sim, in);
   if (conf.run_sim) {
-    for (const auto &[name, func] : sim->template get_all_red_variants<Op>()) {
-      r = run_bench_red<T>(func, gold, n, name, sim, in);
-      print_result(name, type_name, n, r);
-    }
+    for (const auto &[name, func] : sim->template get_all_red_variants<Op>())
+      run_bench_red<T>(name, type_name, func, gold, n, sim, in);
   }
 }
 
@@ -324,8 +333,6 @@ static void run_red_simple(const Kernel &kernel, const T *in, uint64_t n,
 // For array reductions ...
 template <typename T, unsigned l>
 static void run_type_red_arr(std::string_view type_name, uint64_t n) {
-  std::optional<TimingResult> r;
-
   // Skip array reduction if we're only running simulation tests.
   if (!conf.run)
     return;
@@ -348,13 +355,10 @@ static void run_type_red_arr(std::string_view type_name, uint64_t n) {
   for (unsigned i = 0; i < l; i++)
     gold2[i] = (gold[i] / 2) + (gold2[i] / 2);
 
-  std::string name = format("red_sum_arr_{}", l);
-  r = run_bench_red_arr<T>(red_sum_arr<T, l>, gold, n, name, out, l, in);
-  print_result(name, type_name, n, r);
-
-  name = format("red_comb_sep_arr_{}", l);
-  r = run_bench_red_arr<T>(red_comb_sep_arr<T, l>, gold2, n, name, out, l, in);
-  print_result(name, type_name, n, r);
+  run_bench_red_arr<T>(format("red_sum_arr_{}", l), type_name,
+                       red_sum_arr<T, l>, gold, n, out, l, in);
+  run_bench_red_arr<T>(format("red_comb_sep_arr_{}", l), type_name,
+                       red_comb_sep_arr<T, l>, gold2, n, out, l, in);
 
   free(gold);
   free(gold2);
@@ -369,7 +373,9 @@ static void run_type_red_arr(std::string_view type_name, uint64_t n) {
 template <template <typename> class Sim, typename T>
   requires RedSimulationLike<Sim<T>, T>
 static void run_type_red(std::string_view type_name) {
-  std::optional<TimingResult> r;
+  if (!conf.match_type(type_name))
+    return;
+  std::cout << format("\n--- {} ---\n", type_name);
 
   std::unique_ptr<Sim<T>> sim = std::make_unique<Sim<T>>();
   std::unique_ptr<Sim<T>> empty_sim;
@@ -390,15 +396,12 @@ static void run_type_red(std::string_view type_name) {
     // dot reduction
     // ================================================================
     gold = gold_red_dot(in1, in2, n);
-    if (conf.run) {
-      r = run_bench_red<T>(red_dot<T>, gold, n, "red_dot", empty_sim, in1, in2);
-      print_result("red_dot", type_name, n, r);
-    }
+    if (conf.run)
+      run_bench_red<T>("red_dot", type_name, red_dot<T>, gold, n, empty_sim,
+                       in1, in2);
     if (conf.run_sim) {
-      for (const auto &[name, func] : sim->get_all_red_dot_variants()) {
-        r = run_bench_red<T>(func, gold, n, name, sim, in1, in2);
-        print_result(name, type_name, n, r);
-      }
+      for (const auto &[name, func] : sim->get_all_red_dot_variants())
+        run_bench_red<T>(name, type_name, func, gold, n, sim, in1, in2);
     }
 
     // ================================================================
@@ -421,40 +424,33 @@ static void run_type_red(std::string_view type_name) {
       // indirect reduction (sum)
       // ================================================================
       gold = gold_red<T, RedOp::Sum>(in1, n);
-      if (conf.run) {
-        r = run_bench_red<T>(red_indirect<T>, gold, n, "red_indirect",
-                             empty_sim, in1);
-        print_result("red_indirect", type_name, n, r);
-      }
+      if (conf.run)
+        run_bench_red<T>("red_indirect", type_name, red_indirect<T>, gold, n,
+                         empty_sim, in1);
 
       // ================================================================
       // reduction (sum) in a kernel that is also doing something completely
       // unrelated to the reduction.
       // ================================================================
       gold = gold_red<T, RedOp::Sum>(in1, n);
-      if (conf.run) {
-        r = run_bench_red<T>(red_kernel_part<T>, gold, n, "red_kernel_part",
-                             empty_sim, in1);
-        print_result("red_kernel_part", type_name, n, r);
-      }
+      if (conf.run)
+        run_bench_red<T>("red_kernel_part", type_name, red_kernel_part<T>, gold,
+                         n, empty_sim, in1);
 
       // ================================================================
       // combined reduction - in the same loop ...
       // ================================================================
       gold = (gold_red<T, RedOp::Sum>(in1, n) / 2) +
              (gold_red<T, RedOp::Max>(in1, n) / 2);
-      if (conf.run) {
-        r = run_bench_red<T>(red_comb<T>, gold, n, "red_comb", empty_sim, in1);
-        print_result("red_comb", type_name, n, r);
-      }
+      if (conf.run)
+        run_bench_red<T>("red_comb", type_name, red_comb<T>, gold, n, empty_sim,
+                         in1);
       // ================================================================
       // ... and in separate loops
       // ================================================================
-      if (conf.run) {
-        r = run_bench_red<T>(red_comb_sep<T>, gold, n, "red_comb_sep",
-                             empty_sim, in1);
-        print_result("red_comb_sep", type_name, n, r);
-      }
+      if (conf.run)
+        run_bench_red<T>("red_comb_sep", type_name, red_comb_sep<T>, gold, n,
+                         empty_sim, in1);
     }
 
 #pragma omp target exit data map(delete : in1[0 : n], in2[0 : n])
@@ -470,7 +466,23 @@ static void run_type_red(std::string_view type_name) {
     // reductions, which is why we only test with one compile-time constant size
     // for now.
 
+    // trunk_jd can't lower array reductions (ICEs in createReductionsGPU), so
+    // skip them for that label. Gating the call avoids instantiating the
+    // array-reduction kernels at all.
+#ifndef TRUNK_JD
     run_type_red_arr<T, 32>(type_name, n);
+#endif
+  }
+
+  // ================================================================
+  // reduction computing Pi (double only, single fixed size)
+  // ================================================================
+  if constexpr (std::is_same_v<T, double>) {
+    if (conf.run) {
+      double gold_pi = std::numbers::pi;
+      uint64_t n = 5000000000;
+      run_bench_red<double>("red_pi", type_name, red_pi, gold_pi, n, empty_sim);
+    }
   }
 }
 
@@ -479,25 +491,8 @@ void run_bench_op() {
 
   print_header();
 
-  std::cout << "\n--- double ---\n";
   run_type_red<SelectedSim, double>("double");
-  if (conf.run) {
-    // ================================================================
-    // reduction computing Pi
-    // ================================================================
-    double gold_pi = std::numbers::pi;
-    uint64_t n = 5000000000;
-    std::unique_ptr<SelectedSim<double>> empty_sim;
-    auto r = run_bench_red<double>(red_pi, gold_pi, n, "red_pi", empty_sim);
-    print_result("red_pi", "double", n, r);
-  }
-
-  std::cout << "\n--- uint ---\n";
   run_type_red<SelectedSim, unsigned>("uint");
-
-  std::cout << "\n--- ulong ---\n";
   run_type_red<SelectedSim, unsigned long>("ulong");
-
-  std::cout << "\n--- Value ---\n";
   run_type_red<SelectedSim, Value>("Value");
 }

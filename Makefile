@@ -67,11 +67,13 @@ SIM_trunk_dev   ?= trunk_dev
 SIM_trunk_cg    ?= trunk
 # Compiler definitions. The label and simulation header are passed positionally
 # by BUILD_RULE; DEFS_<label> only needs to carry semantic macros that actually
-# branch the source (currently just AOMP_DEV, used by xteam_scan.cpp).
+# branch the source: AOMP_DEV (used by xteam_scan.cpp) and TRUNK_JD
+# (xteam_red.cpp; skips array reductions, which trunk_jd can't lower — it ICEs
+# in createReductionsGPU).
 DEFS_aomp_dev   ?= $(COMMON_DEFS) -DAOMP_DEV
 DEFS_aomp       ?= $(COMMON_DEFS)
 DEFS_trunk      ?= $(COMMON_DEFS)
-DEFS_trunk_jd   ?= $(COMMON_DEFS)
+DEFS_trunk_jd   ?= $(COMMON_DEFS) -DTRUNK_JD
 DEFS_trunk_dev  ?= $(COMMON_DEFS)
 DEFS_trunk_cg   ?= $(COMMON_DEFS)
 # Compiler flags per op.
@@ -127,7 +129,7 @@ BINARIES = $(foreach O,$(OPS),$(foreach L,$(LABELS_$(O)),$(foreach T,$(TEAM_NUMS
 
 all: $(BINARIES)
 
-# Per-(op, label, teams) build rule. Compiles inside out_<op>_<label>_<teams>/
+# Per-(op, label, teams) build rule. Compiles inside out/<op>_<label>_<teams>/
 # so -save-temps=obj keeps intermediates there, then symlinks the binary to
 # the top dir for convenience.
 define BUILD_RULE
@@ -142,15 +144,15 @@ $(1)_$(2)_$(3): $(SRC_DIR)/xteam_bench.cpp \
                 $(COMMON_HEADERS)
 	@test -n "$$(CXX_$(2))" || { echo "ERROR: CXX_$(2) is not set"; exit 1; }
 	@echo "Building $(1) for $(2) with $(3) teams ..."
-	rm -rf out_$(1)_$(2)_$(3)
-	mkdir -p out_$(1)_$(2)_$(3)
-	cd out_$(1)_$(2)_$(3) && $$(CXX_$(2)) $$(DEFS_$(2)) $$(FLAGS_$(2)_$(1)) \
+	rm -rf out/$(1)_$(2)_$(3)
+	mkdir -p out/$(1)_$(2)_$(3)
+	cd out/$(1)_$(2)_$(3) && $$(CXX_$(2)) $$(DEFS_$(2)) $$(FLAGS_$(2)_$(1)) \
 		-DCOMPILER_LABEL='"$(2)"' \
 		-DXTEAM_SIM_HEADER='"xteam_simulations_$(SIM_$(2)).h"' \
 		$$(DEFS_$(1)_$(2)_$(3)) \
-		-o $$@ ../$(SRC_DIR)/xteam_bench.cpp ../$(SRC_DIR)/xteam_$(1).cpp
-	ln -sf out_$(1)_$(2)_$(3)/$$@ $$@
-	cd out_$(1)_$(2)_$(3) && $$(dir $$(CXX_$(2)))llvm-dis *.bc
+		-o $$@ ../../$(SRC_DIR)/xteam_bench.cpp ../../$(SRC_DIR)/xteam_$(1).cpp
+	ln -sf out/$(1)_$(2)_$(3)/$$@ $$@
+	cd out/$(1)_$(2)_$(3) && $$(dir $$(CXX_$(2)))llvm-dis *.bc
 endef
 $(foreach O,$(OPS),$(foreach L,$(LABELS_$(O)),$(foreach T,$(TEAM_NUMS),$(eval $(call BUILD_RULE,$(O),$(L),$(T))))))
 
@@ -179,7 +181,7 @@ format:
 	clang-format -i $(SRC_DIR)/*.cpp $(SRC_DIR)/*.h
 
 clean:
-	rm -rf $(BINARIES) out_*
+	rm -rf $(BINARIES) out
 
 help:
 	@echo "xteam benchmark"

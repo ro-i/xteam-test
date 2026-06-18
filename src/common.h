@@ -121,6 +121,27 @@ struct Config {
   int warmup_iters = 2;
   int bench_iters = 10;
   std::vector<uint64_t> array_sizes;
+  std::optional<std::vector<std::string>> type_filters;
+  std::optional<std::vector<std::string>> name_filters;
+
+  bool match_type(std::string_view type) const {
+    return filter_match(type_filters, type);
+  }
+  bool match_name(std::string_view name) const {
+    return filter_match(name_filters, name);
+  }
+
+private:
+  static bool
+  filter_match(const std::optional<std::vector<std::string>> &filters,
+               std::string_view s) {
+    if (!filters)
+      return true;
+    for (const auto &f : *filters)
+      if (f == s)
+        return true;
+    return false;
+  }
 };
 // Global conf object, instantiated in xteam_bench.cpp
 extern Config conf;
