@@ -49,6 +49,13 @@ Example: `./run_bench.sh -rsq -n1 red_trunk_208 red_trunk_dev_208 red_trunk_1040
 
 You may also use `LIBOMPTARGET_INFO=16` to get some info on every kernel launch done by OpenMP offloading.
 
-Note:
+`compare_avg.awk` is an AWK script that can be used/adapted to calculate percentage changes from the output of `run_bench.sh`.
+Run via `awk -f ./compare_avg.awk <file containing run_bench.sh output>`.
+Note, though, that this script is not really something you can directly use on any output without modifications.
+It's more like a starting point that handles a few common situations and can be quickly adapted.
+
+---------
+
+PS:
 - the input data used for the tests is always the same. If failures don't reproduce reliably, it's not due to changing data, but rather due to a race condition in the algorithm under test.
 - we assume at some points that warp size is 64 for AMD and 32 for Nvidia. In some cases, we need a compile-time constand to replicate CodeGen behavior in the simulations although a cleaner alternative would be using builtins (but they aren't constexpr).
