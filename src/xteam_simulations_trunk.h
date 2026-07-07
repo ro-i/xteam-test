@@ -13,8 +13,24 @@
 #include "common.h"
 #include "xteam_simulations_common_trunk.h"
 
-// Matches OMPIRBuilder's default ReductionBufNum (1024)
-#define TRUNK_NUM_RECORDS 1024
+// =========================================================================
+// Layout-compatible replica of KernelLaunchEnvironmentTy from
+// offload/include/Shared/Environment.h.
+// __kmpc_gpu_xteam_reduce_nowait reads the cross-team buffer from
+// state::getKernelLaunchEnvironment().ReductionBuffer; since the simulation
+// kernels do not use a `reduction(...)` clause, the plugin leaves that slot
+// null. The simulation therefore writes its own gbuf into the slot through this
+// replica before calling the reduction runtime. The remaining fields preserve
+// ABI layout.
+// =========================================================================
+
+struct SimKernelLaunchEnvTy {
+  void *ReductionBuffer = nullptr;
+  void *DynCGroupMemFbPtr = nullptr;
+  uint32_t ReductionTeamsDone = 0;
+  uint32_t DynCGroupMemSize = 0;
+  uint8_t DynCGroupMemFb = 0;
+};
 
 // =========================================================================
 // Runtime API declarations
@@ -23,38 +39,51 @@
 
 #if defined(__AMDGCN__) || defined(__NVPTX__)
 extern "C" {
-int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
-    void *Loc, void *GlobalBuffer, uint32_t num_of_records,
-    uint64_t reduce_data_size, void *reduce_data, ShuffleReductFnTy shflFct,
-    InterWarpCopyFnTy cpyFct, ListGlobalFnTy lgcpyFct, ListGlobalFnTy lgredFct,
-    ListGlobalFnTy glcpyFct, ListGlobalFnTy glredFct);
+int32_t __kmpc_gpu_xteam_reduce_nowait(void *Loc, void *reduce_data,
+                                       ShuffleReductFnTy shflFct,
+                                       InterWarpCopyFnTy cpyFct,
+                                       ListGlobalFnTy lgcpyFct,
+                                       ListGlobalFnTy glcpyFct,
+                                       ListGlobalFnTy glredFct);
 }
 #else
 extern "C" {
-inline int32_t __kmpc_nvptx_teams_reduce_nowait_v2(
-    void *, void *, uint32_t, uint64_t, void *, ShuffleReductFnTy shflFct,
-    InterWarpCopyFnTy cpyFct, ListGlobalFnTy lgcpyFct, ListGlobalFnTy lgredFct,
-    ListGlobalFnTy glcpyFct, ListGlobalFnTy glredFct) {
+inline int32_t __kmpc_gpu_xteam_reduce_nowait(
+    void *, void *, ShuffleReductFnTy shflFct, InterWarpCopyFnTy cpyFct,
+    ListGlobalFnTy lgcpyFct, ListGlobalFnTy glcpyFct, ListGlobalFnTy glredFct) {
   return 0;
 }
 }
 #endif
 
-// =========================================================================
-// Device helpers and codegen-simulated callbacks
-// Completes the definitions from xteam_simulations_common_trunk.h
-// =========================================================================
-
+// Re-declare ompx::state::getKernelLaunchEnvironment() returning a reference
+// to our layout-compatible replica. C++ Itanium mangling does not encode the
+// return type, so this resolves at link time to the real runtime symbol
+// (ompx::state::getKernelLaunchEnvironment) in the device image. On the host
+// side we provide an inline dummy so the host fallback compilation still
+// links; the stub is never reached in practice because the kernels only run
+// on device.
 #pragma omp begin declare target
-
-// --- 4. _omp_reduction_list_to_global_reduce_func (ListGlobalFnTy) -------
-//   buf[idx] = combine(buf[idx], *priv)
-template <typename T, RedOp Op>
-static void lg_reduce(void *buf, int idx, void *rd) {
-  T *b = static_cast<T *>(buf);
-  b[idx] = red_combine<T, Op>(b[idx], **reinterpret_cast<T **>(rd));
+namespace ompx::state {
+#if defined(__AMDGCN__) || defined(__NVPTX__)
+SimKernelLaunchEnvTy &getKernelLaunchEnvironment();
+#else
+inline SimKernelLaunchEnvTy &getKernelLaunchEnvironment() {
+  static SimKernelLaunchEnvTy Dummy;
+  return Dummy;
 }
+#endif
+} // namespace ompx::state
 
+// Helper that writes `buf` into the runtime KLE's ReductionBuffer slot.
+// Wrapping the store in a plain function keeps OpenMP's implicit capture
+// machinery from trying to map the `KLE.ReductionBuffer` lvalue out of the
+// target region (which fails with "expected addressable lvalue in 'map'
+// clause"). From the callsite's perspective this is just a function call
+// taking a device pointer argument.
+static inline void set_kle_reduction_buffer(void *buf) {
+  ompx::state::getKernelLaunchEnvironment().ReductionBuffer = buf;
+}
 #pragma omp end declare target
 
 // =========================================================================
@@ -65,7 +94,7 @@ static void lg_reduce(void *buf, int idx, void *rd) {
 //   1.  __kmpc_nvptx_parallel_reduce_nowait_v2 - intra-team reduction
 //       (warp shuffle + inter-warp copy so that thread 0 holds the team
 //       result).
-//   2.  __kmpc_nvptx_teams_reduce_nowait_v2 - inter-/cross-team reduction
+//   2.  __kmpc_gpu_xteam_reduce_nowait - inter-/cross-team reduction
 //       (each team's thread 0 writes to a global buffer; the last team
 //       arriving combines all entries via warp/cross-warp reduction).
 // =========================================================================
@@ -96,17 +125,21 @@ template <typename T> class Simulation {
       void *rl[1] = {&priv};
 
       // Step 1: within-team (parallel) reduction
-      __kmpc_nvptx_parallel_reduce_nowait_v2(nullptr, sizeof(T), rl,
-                                             shfl_reduce<T, Op>, warp_copy<T>);
+      int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
+          nullptr, sizeof(T), rl, shfl_reduce<T, Op>, warp_copy<T>);
 
-      // Step 2: cross-team (teams) reduction
-      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-          nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl, shfl_reduce<T, Op>,
-          warp_copy<T>, lg_copy<T>, lg_reduce<T, Op>, gl_copy<T>,
-          gl_reduce<T, Op>);
+      // Step 2: cross-team (teams) reduction. Mask non-master lanes to
+      // identity so they don't contaminate the last team's block reduce.
+      // Seed the runtime KLE's ReductionBuffer with gbuf.
+      T team_priv = is_master ? priv : rnv;
+      void *rl_teams[1] = {&team_priv};
+      set_kle_reduction_buffer(gbuf);
+      int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
+          nullptr, rl_teams, shfl_reduce<T, Op>, warp_copy<T>, lg_copy<T>,
+          gl_copy<T>, gl_reduce<T, Op>);
 
       if (winner == 1)
-        result = red_combine<T, Op>(result, priv);
+        result = red_combine<T, Op>(result, team_priv);
     }
 
     return result;
@@ -178,17 +211,21 @@ template <typename T> class Simulation {
         void *rl[1] = {&priv};
 
         // Step 1: within-team (parallel) reduction
-        __kmpc_nvptx_parallel_reduce_nowait_v2(
+        int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
             nullptr, sizeof(T), rl, shfl_reduce<T, Op>, warp_copy<T>);
 
-        // Step 2: cross-team (teams) reduction
-        int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-            nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl, shfl_reduce<T, Op>,
-            warp_copy<T>, lg_copy<T>, lg_reduce<T, Op>, gl_copy<T>,
-            gl_reduce<T, Op>);
+        // Step 2: cross-team (teams) reduction. Mask non-master lanes to
+        // identity to avoid contamination.
+        // Seed the runtime KLE's ReductionBuffer with gbuf.
+        T team_priv = is_master ? priv : rnv;
+        void *rl_teams[1] = {&team_priv};
+        set_kle_reduction_buffer(gbuf);
+        int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
+            nullptr, rl_teams, shfl_reduce<T, Op>, warp_copy<T>, lg_copy<T>,
+            gl_copy<T>, gl_reduce<T, Op>);
 
         if (winner == 1)
-          result = red_combine<T, Op>(result, priv);
+          result = red_combine<T, Op>(result, team_priv);
       }
     }
 
@@ -209,16 +246,20 @@ template <typename T> class Simulation {
         priv += a[i] * b[i];
 
       void *rl[1] = {&priv};
-      __kmpc_nvptx_parallel_reduce_nowait_v2(
+      int32_t is_master = __kmpc_nvptx_parallel_reduce_nowait_v2(
           nullptr, sizeof(T), rl, shfl_reduce<T, RedOp::Sum>, warp_copy<T>);
 
-      int32_t winner = __kmpc_nvptx_teams_reduce_nowait_v2(
-          nullptr, gbuf, TRUNK_NUM_RECORDS, sizeof(T), rl,
-          shfl_reduce<T, RedOp::Sum>, warp_copy<T>, lg_copy<T>,
-          lg_reduce<T, RedOp::Sum>, gl_copy<T>, gl_reduce<T, RedOp::Sum>);
+      // Mask non-master lanes to identity.
+      // Seed the runtime KLE's ReductionBuffer with gbuf.
+      T team_priv = is_master ? priv : rnv;
+      void *rl_teams[1] = {&team_priv};
+      set_kle_reduction_buffer(gbuf);
+      int32_t winner = __kmpc_gpu_xteam_reduce_nowait(
+          nullptr, rl_teams, shfl_reduce<T, RedOp::Sum>, warp_copy<T>,
+          lg_copy<T>, gl_copy<T>, gl_reduce<T, RedOp::Sum>);
 
       if (winner == 1)
-        result += priv;
+        result += team_priv;
     }
 
     return result;
@@ -228,7 +269,7 @@ public:
   Simulation() {
     assert(d_gbuf == nullptr);
     int devid = omp_get_default_device();
-    d_gbuf = target_alloc<T>(TRUNK_NUM_RECORDS, devid);
+    d_gbuf = target_alloc<T>(XTEAM_NUM_TEAMS, devid);
   }
 
   ~Simulation() {

@@ -63,7 +63,7 @@ SIM_aomp_dev    ?= aomp_dev
 SIM_aomp        ?= aomp
 SIM_trunk       ?= trunk
 SIM_trunk_jd    ?= trunk_jd
-SIM_trunk_dev   ?= trunk_dev
+SIM_trunk_dev   ?= trunk
 SIM_trunk_cg    ?= trunk
 # Compiler definitions. The label and simulation header are passed positionally
 # by BUILD_RULE; DEFS_<label> only needs to carry semantic macros that actually
