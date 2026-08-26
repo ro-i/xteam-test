@@ -44,18 +44,27 @@ using fmt::vformat;
 #ifndef XTEAM_NUM_TEAMS
 #define XTEAM_NUM_TEAMS 208 // gfx90a number of CUs: 104
 #endif
-// If true, let codegen for reduction/scan determine num_teams and num_threads.
-// Note that the simulations still use XTEAM_NUM_TEAMS and XTEAM_NUM_THREADS.
-#ifndef CODEGEN_AUTODETECTION
-#define CODEGEN_AUTODETECTION 0
+// If true, let codegen for reduction/scan determine num_teams resp.
+// num_threads. Both dimensions are independent, so codegen can be left in
+// charge of one of them while the other one is pinned.
+// Note that the simulations always use XTEAM_NUM_TEAMS and XTEAM_NUM_THREADS,
+// including for the dimensions left to codegen.
+#ifndef CODEGEN_AUTODETECT_TEAMS
+#define CODEGEN_AUTODETECT_TEAMS 0
 #endif
-#if CODEGEN_AUTODETECTION
+#ifndef CODEGEN_AUTODETECT_THREADS
+#define CODEGEN_AUTODETECT_THREADS 0
+#endif
+#if CODEGEN_AUTODETECT_TEAMS
 #define TEAMS
-#define THREADS
-#else // CODEGEN_AUTODETECTION
+#else // CODEGEN_AUTODETECT_TEAMS
 #define TEAMS num_teams(XTEAM_NUM_TEAMS)
+#endif // CODEGEN_AUTODETECT_TEAMS
+#if CODEGEN_AUTODETECT_THREADS
+#define THREADS
+#else // CODEGEN_AUTODETECT_THREADS
 #define THREADS num_threads(XTEAM_NUM_THREADS)
-#endif // CODEGEN_AUTODETECTION
+#endif // CODEGEN_AUTODETECT_THREADS
 #define TEAMS_THREADS TEAMS THREADS
 // If true, use no-loop scan codegen.
 #ifndef NOLOOP

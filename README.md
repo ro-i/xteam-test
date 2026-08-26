@@ -11,13 +11,9 @@ Each compiler is defined and implemented by
 - an `xteam_simulations_<label>.h` header implementing simulations using the API endpoints provided by the compiler-specific OpenMP device runtime
   (this header might just be a symlink in case the corresponding compilers only differ in code generation and not in the runtime implementation)
 
-Currently used compilers (with varying levels of support), by their label:
+Currently used default compilers, by their label:
 - `aomp`, a build of ROCm/llvm-project `amd-staging` (specific commit might vary depending on the situation*)
-- `aomp_dev`, a build of https://github.com/ROCm/llvm-project/tree/amd/dev/ro-i/xteam-reduction-scan
 - `trunk`, a build of llvm/llvm-project `main` (specific commit might vary depending on the situation*)
-- `trunk_cg`, a build of llvm/llvm-project `main` with custom codegen changes
-- `trunk_dev`, a build of llvm/llvm-project `main` with custom runtime changes
-- `trunk_jd`, a build of https://github.com/jdoerfert/llvm-project/tree/omp_multi_lvl_red (rebased and modified)
 
 *If used for benchmarking purposes, the commit information should be provided together with the results.
 
@@ -27,21 +23,25 @@ This repository is built specifically for easy modification and addition of diff
 Compile benchmarks binaries:
 - set `CXX_<label>` in either `Makefile` or a `local.mk` file to the path to the corresponding `clang++`.
 - don't forget to set the correct `OFFLOAD_ARCH` (e.g., `gfx90a`, `gfx942`, etc.)
-- run either `make` (or `make all`) to compile all benchmark binaries for all combinations of compilers, operations, and team numbers.
+- run either `make` (or `make all`) to compile all benchmark binaries for all combinations of compilers, operations, and grids.
 - or,
-  - run `make <op>` to compile the benchmark binaries for all combinations of compilers and team numbers for the operation identified by `op`.
-  - run `make <label>` to compile the benchmark binaries for all combinations of operations and team numbers for the compiler identified by `label`.
-  - run `make <op>_<label>` to compile the benchmark binaries for all team numbers for the operation and compiler identified by `op` and `label`.
-- Each compiled benchmark will produce one benchmark binary in the naming format `<op>_<label>_<teams>`, e.g.:
-  - `red_aomp_208` (reduction benchmark for `aomp` using 208 teams)
-  - `scan_trunk_dev_10400` (scan benchmark for `trunk_dev` using 10400 teams)
+  - run `make <op>` to compile the benchmark binaries for all combinations of compilers and grids for the operation identified by `op`.
+  - run `make <label>` to compile the benchmark binaries for all combinations of operations and grids for the compiler identified by `label`.
+  - run `make <op>_<label>` to compile the benchmark binaries for all grids for the operation and compiler identified by `op` and `label`.
+- The grids to build for are configured via `GRIDS`, in the format `<teams>x<threads>`.
+  Either dimension may be `auto`, leaving it to codegen autodetection; the simulations then use the default from `common.h` for that dimension.
+  A grid with both dimensions left to codegen is spelled `auto`.
+- Each compiled benchmark will produce one benchmark binary in the naming format `<op>_<label>_<grid>`, e.g.:
+  - `red_aomp_auto` (reduction benchmark for `aomp`, both dimensions left to codegen autodetection)
+  - `red_aomp_208x512` (reduction benchmark for `aomp` with 208 teams of 512 threads each)
+  - `red_aomp_autox256` (reduction benchmark for `aomp` with 256 threads per team, number of teams left to codegen autodetection)
 - For other configuration options, see `Makefile` and `common.h`.
 
 There are two options for running benchmark binaries:
 1. Run them directly by invoking their corresponding benchmark binary (see `<benchmark binary> -h` for available options).
 2. Run them combined and interleaved by invoking multiple benchmark binaries through `run_bench.sh` (see `run_bench.sh -h` for available options).
 
-Example: `./run_bench.sh -rsq -n1 red_trunk_208 red_trunk_dev_208 red_trunk_10400 red_trunk_dev_10400`
+Example: `./run_bench.sh -rsq -n1 red_trunk_208x512 red_trunk_dev_208x512 red_trunk_10400x512 red_trunk_dev_10400x512`
 - runs each binary for one round (`-n1`)
 - does a quick run, testing only one array size (`-q`)
 - runs non-simulation tests (`-r`)

@@ -191,8 +191,8 @@ int main(int argc, char *const *argv) {
       conf.auto_scale ? "true" : "false", conf.evict_cache ? "true" : "false",
       conf.warmup_iters,
       conf.auto_scale ? "auto-scaled" : std::to_string(conf.bench_iters),
-      (CODEGEN_AUTODETECTION ? "auto" : std::to_string(XTEAM_NUM_TEAMS)),
-      CODEGEN_AUTODETECTION ? "auto" : std::to_string(XTEAM_NUM_THREADS),
+      (CODEGEN_AUTODETECT_TEAMS ? "auto" : std::to_string(XTEAM_NUM_TEAMS)),
+      CODEGEN_AUTODETECT_THREADS ? "auto" : std::to_string(XTEAM_NUM_THREADS),
       XTEAM_NUM_TEAMS, XTEAM_NUM_THREADS);
   std::cout << "compiled with clang " << __clang_version__ << "\n";
 

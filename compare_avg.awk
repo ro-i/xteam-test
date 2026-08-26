@@ -11,10 +11,10 @@
 # Example of the whitespace-separated column layout (numbers use ',' thousands
 # separators):
 #   $1 test   $2 type   $3 N
-#   $4 best  / $5  avg   -> red_<label1>_208
-#   $6 best  / $7  avg   -> red_<label2>_208
-#   $8 best  / $9  avg   -> red_<label1>_10400
-#   $10 best / $11 avg   -> red_<label2>_10400
+#   $4 best  / $5  avg   -> red_<label1>_208x512
+#   $6 best  / $7  avg   -> red_<label2>_208x512
+#   $8 best  / $9  avg   -> red_<label1>_10400x512
+#   $10 best / $11 avg   -> red_<label2>_10400x512
 #
 # Throughput rows are MB/s (higher is better). Rows marked with '*' fell back
 # to time in ms (lower is better), so the comparison is inverted for them.
