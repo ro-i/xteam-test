@@ -16,17 +16,12 @@ MAKEFLAGS += -j$(JOBS) -O
 SRC_DIR        = src
 COMMON_HEADERS = $(SRC_DIR)/common.h \
 	$(SRC_DIR)/xteam_simulations_common.h \
-	$(SRC_DIR)/xteam_simulations_common_aomp.h \
 	$(SRC_DIR)/xteam_simulations_common_trunk.h \
 	$(SRC_DIR)/xteam_simulations_selected.h
 
 # Known operations. The op name is also the suffix used in the source file name
 # xteam_<op>.cpp and in the binary name (<op>_<label>_<teams>).
-ALL_OPS = red scan misc
-
-# Known labels. Add new ones here and provide CXX_<label> via local.mk or the
-# command line to enable them.
-ALL_LABELS = aomp_dev aomp trunk trunk_jd trunk_dev trunk_cg
+ALL_OPS = red misc
 
 # ── Compiler configurations ─────────────────────────────────────────────────
 # Define as many CXX_<label> variables as you need. Each one will produce one
@@ -37,61 +32,36 @@ ALL_LABELS = aomp_dev aomp trunk trunk_jd trunk_dev trunk_cg
 # Defaults (override on the command line or via local.mk):
 -include local.mk
 
+# Known labels. Add new ones here and provide CXX_<label> via local.mk or the
+# command line to enable them.
+ALL_LABELS      ?= aomp trunk
+
 # GPU target.
 OFFLOAD_ARCH    ?= gfx90a
 
 # Team counts to build for / codegen autodetection.
-TEAM_NUMS       ?= 208 10400 auto
+TEAM_NUMS       ?= auto
 
 # Per-label op support.
-OPS_aomp_dev    ?= red scan
-OPS_aomp        ?= red scan
+OPS_aomp        ?= red misc
 OPS_trunk       ?= red misc
-OPS_trunk_jd    ?= red misc
-OPS_trunk_dev   ?= red misc
-OPS_trunk_cg    ?= red misc
 # Compiler paths.
-CXX_aomp_dev    ?=
 CXX_aomp        ?=
 CXX_trunk       ?=
-CXX_trunk_jd    ?=
-CXX_trunk_cg    ?=
 # Simulation header per label. Defaults to the label's own header; override
-# when a label reuses another label's simulation (e.g. trunk_cg differs from
-# trunk only in codegen, so it shares the trunk runtime definitions).
-SIM_aomp_dev    ?= aomp_dev
-SIM_aomp        ?= aomp
+# when a label reuses another label's simulation.
+SIM_aomp        ?= trunk
 SIM_trunk       ?= trunk
-SIM_trunk_jd    ?= trunk_jd
-SIM_trunk_dev   ?= trunk
-SIM_trunk_cg    ?= trunk
 # Compiler definitions. The label and simulation header are passed positionally
 # by BUILD_RULE; DEFS_<label> only needs to carry semantic macros that actually
 # branch the source.
-DEFS_aomp_dev   ?= $(COMMON_DEFS) -DAOMP_DEV
 DEFS_aomp       ?= $(COMMON_DEFS)
 DEFS_trunk      ?= $(COMMON_DEFS)
-DEFS_trunk_jd   ?= $(COMMON_DEFS) -DTRUNK_JD
-DEFS_trunk_dev  ?= $(COMMON_DEFS)
-DEFS_trunk_cg   ?= $(COMMON_DEFS)
 # Compiler flags per op.
-FLAGS_aomp_dev_red   ?= $(COMMON_FLAGS)
-FLAGS_aomp_dev_scan  ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
 FLAGS_aomp_red       ?= $(COMMON_FLAGS)
-FLAGS_aomp_scan      ?= $(COMMON_FLAGS) -fopenmp-target-xteam-scan
+FLAGS_aomp_misc      ?= $(COMMON_FLAGS)
 FLAGS_trunk_misc     ?= $(COMMON_FLAGS)
 FLAGS_trunk_red      ?= $(COMMON_FLAGS)
-FLAGS_trunk_scan     ?= $(COMMON_FLAGS)
-FLAGS_trunk_jd_misc  ?= $(COMMON_FLAGS)
-FLAGS_trunk_jd_red   ?= $(COMMON_FLAGS)
-FLAGS_trunk_jd_scan  ?= $(COMMON_FLAGS)
-FLAGS_trunk_dev_misc ?= $(COMMON_FLAGS)
-FLAGS_trunk_dev_red  ?= $(COMMON_FLAGS)
-FLAGS_trunk_dev_scan ?= $(COMMON_FLAGS)
-FLAGS_trunk_cg_misc  ?= $(COMMON_FLAGS)
-FLAGS_trunk_cg_red   ?= $(COMMON_FLAGS)
-FLAGS_trunk_cg_scan  ?= $(COMMON_FLAGS)
-# Note: potentially test no-loop with -fopenmp-target-xteam-no-loop-scan
 
 # ── Common flags ────────────────────────────────────────────────────────────
 COMMON_FLAGS = -O2 -fopenmp --offload-arch=$(OFFLOAD_ARCH) -std=c++20 -save-temps=obj

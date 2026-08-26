@@ -2,6 +2,7 @@ results/
 r[0-9]*/
 prof/
 .rocprofv3/
+src/xteam_simulations_trunk_*
 local.mk
 red_*
 scan_*
