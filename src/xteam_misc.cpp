@@ -257,7 +257,7 @@ template <typename T> static void run_type(std::string_view type_name) {
     return;
   std::cout << format("\n--- {} ---\n", type_name);
 
-  for (uint64_t n : conf.array_sizes) {
+  for (uint64_t n : array_sizes_for_type<T>()) {
     T *a = alloc<T>(n);
     T *b = alloc<T>(n);
     T *out = alloc<T>(n);

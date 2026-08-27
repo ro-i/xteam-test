@@ -89,6 +89,14 @@ using fmt::vformat;
 // default alignment for aligned_alloc
 #define ALIGNMENT 128
 
+// Maximum size in bytes of a single benchmark array. Array sizes that would
+// exceed this for the type under test are skipped (see array_sizes_for_type()).
+// Wide types are the reason this exists: Value is 48 B/element, and the misc
+// benchmark keeps six arrays mapped at once in misc_particle, so the largest
+// array size would need ~51 GB of device memory (and ~85 GB on the host) --
+// enough to run a 64 GB card out of memory whenever anything else is using it.
+#define MAX_ARRAY_BYTES (2ull * 1024 * 1024 * 1024)
+
 // Size of the device-side buffer used to evict the GPU cache between iterations
 // Must be larger than any L2/MALL/Infinity-cache we expect to run on.
 #define CACHE_EVICT_BYTES (512ull * 1024 * 1024)
@@ -500,6 +508,43 @@ inline std::string fmt_num_sep(std::string s) {
   return s;
 }
 
+// Largest element count `T` may be benchmarked with, see MAX_ARRAY_BYTES. With
+// the default size list this only bites for types wider than 8 bytes.
+template <typename T> inline constexpr uint64_t max_array_size() {
+  return MAX_ARRAY_BYTES / sizeof(T);
+}
+
+// The array sizes to run for type `T`: conf.array_sizes with everything above
+// max_array_size<T>() dropped. Prints a note when sizes are dropped so that a
+// short result table for a wide type isn't mistaken for a missing test.
+template <typename T> inline std::vector<uint64_t> array_sizes_for_type() {
+  const uint64_t max_n = max_array_size<T>();
+  std::vector<uint64_t> sizes;
+  for (uint64_t n : conf.array_sizes)
+    if (n <= max_n)
+      sizes.push_back(n);
+
+  // Nothing left to run: every requested size is over budget. That is the norm
+  // for a quick run (-q / -Q), which asks for a single large size on purpose,
+  // so clamp to the limit instead of silently running no test at all.
+  if (sizes.empty() && !conf.array_sizes.empty()) {
+    std::cout << format("(all {} requested array size(s) exceed the {} MiB "
+                        "per-array limit at {} B/element: running {} elements "
+                        "instead)\n",
+                        conf.array_sizes.size(),
+                        MAX_ARRAY_BYTES / (1024 * 1024), sizeof(T),
+                        fmt_num_sep(format("{}", max_n)));
+    return {max_n};
+  }
+
+  if (const size_t dropped = conf.array_sizes.size() - sizes.size())
+    std::cout << format("(skipping {} array size(s) above {} elements: at {} "
+                        "B/element they exceed the {} MiB per-array limit)\n",
+                        dropped, fmt_num_sep(format("{}", max_n)), sizeof(T),
+                        MAX_ARRAY_BYTES / (1024 * 1024));
+  return sizes;
+}
+
 inline void print_array_sizes() {
   std::cout << "Array sizes: ";
   for (uint64_t sz : conf.array_sizes)
@@ -528,5 +573,10 @@ inline void print_result(std::string_view test, std::string_view type,
                       test, type, fmt_num_sep(format("{}", n)), r->min_s * 1e3,
                       r->max_s * 1e3, r->avg_s * 1e3,
                       fmt_num_sep(format("{:.0f}", r->best_mbps)),
-                      fmt_num_sep(format("{:.0f}", r->avg_mbps)));
+                      fmt_num_sep(format("{:.0f}", r->avg_mbps)))
+            // Flush per result: stdout is block-buffered when redirected to a
+            // file, and a fatal offload error aborts without flushing, which
+            // otherwise loses up to a full block of results and makes the log
+            // look like it died on whatever line was last flushed.
+            << std::flush;
 }

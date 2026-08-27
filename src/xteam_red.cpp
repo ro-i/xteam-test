@@ -338,7 +338,7 @@ static void run_type_red_arr(std::string_view type_name, uint64_t n) {
     return;
 
   // Shrink large n by the factor of l to avoid overly huge allocations.
-  if (n * l > conf.array_sizes.back())
+  if (n * l > std::min(conf.array_sizes.back(), max_array_size<T>()))
     n /= l;
 
   T *in = alloc<T>(n * l);
@@ -380,7 +380,7 @@ static void run_type_red(std::string_view type_name) {
   std::unique_ptr<Sim<T>> sim = std::make_unique<Sim<T>>();
   std::unique_ptr<Sim<T>> empty_sim;
 
-  for (uint64_t n : conf.array_sizes) {
+  for (uint64_t n : array_sizes_for_type<T>()) {
     T *in1 = alloc<T>(n);
     T *in2 = alloc<T>(n);
     init_data<T>(n, in1, in2);
